@@ -1,5 +1,7 @@
 @import "typeface-roboto.css";
 @import "typeface-roboto-mono.css";
+@import "typeface-jetbrains-mono.css";
+@import "typeface-jetbrains-sans.css";
 @import "vars.css";
 @import "base.css";
 @import "body.css";
@@ -14,4 +16,5 @@
 @import "header.css";
 @import "footer.css";
 @import "highlight.css";
+@import "eurorack.css";
 @import "print.css";

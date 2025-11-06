@@ -1,0 +1,4 @@
+= Interactive BOM Viewer
+:page-layout: ibom
+
+ibom::_attachments/middle-board-ibom.html[]

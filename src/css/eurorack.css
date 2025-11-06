@@ -1,0 +1,473 @@
+/* Eurorack Black Panel Aesthetic */
+/* 45° angled white graphics, square copper elements, high contrast */
+
+/* Full-width toolbar layout */
+@media screen and (min-width: 1024px) {
+  .body {
+    display: block;
+  }
+
+  .body-content {
+    display: flex;
+  }
+}
+
+footer {
+  display: none;
+}
+
+/* Ensure toolbar stays fixed and spans full width */
+.toolbar {
+  top: var(--navbar-height) !important;
+  border-bottom: 1px solid var(--color-darker-gray);
+  width: 100%;
+  z-index: var(--z-index-toolbar);
+  outline: none;
+}
+
+/* Match home-link icon color to breadcrumbs */
+.nav-toggle,
+.home-link {
+  filter: invert(1);
+  opacity: 0.8;
+  outline: none;
+}
+
+.nav-toggle:hover,
+.home-link:hover,
+.home-link.is-current {
+  opacity: 1;
+}
+
+/* Navbar - black panel with white angled accent */
+.navbar {
+  border-bottom: 2px solid var(--color-white);
+}
+
+.navbar-title-wrapper {
+  position: relative;
+  min-width: 20rem;
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  height: var(--navbar-height);
+}
+
+.navbar-title-wrapper::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--navbar-height);
+  background: var(--color-white);
+  /* 73.3° angle: horizontal offset = height / tan(73.3°) = height / 3.2709 */
+  clip-path: polygon(0 0, 0 100%, calc(100% - var(--navbar-height) / 3.2709) 100%, 100% 0);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.navbar-brand {
+  padding-left: 0;
+}
+
+.navbar-brand .navbar-item:first-child,
+.navbar-brand .navbar-item:first-child a {
+  color: var(--color-black) !important;
+  font-family: "JetBrains Mono", monospace !important;
+  font-weight: 800 !important;
+  font-size: calc(26 / var(--rem-base) * 1rem) !important;
+  padding-left: 1rem;
+  padding-right: 2rem;
+  position: relative;
+}
+
+/* Copper square buttons - like jack pads */
+.navbar .button,
+.toolbar .button {
+  background: var(--color-copper);
+  border: none;
+  color: var(--color-white);
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 0; /* square like copper pads */
+  transition: all 0.2s ease;
+}
+
+.navbar .button:hover,
+.toolbar .button:hover {
+  background: var(--color-copper-light);
+  box-shadow: 0 0 8px rgba(184, 115, 51, 0.5);
+}
+
+/* Section dividers with angled right cap at 73.3° */
+.doc .sect1 > h2:not(.discrete),
+.doc .sect1 > h2.discrete,
+.doc .sect2 > h3 {
+  position: relative;
+  padding: 0.5rem 4rem 0.5rem 1rem !important;
+  margin-top: 2rem !important;
+  margin-bottom: 0 !important;
+  margin-left: -1rem !important;
+  margin-right: 0 !important;
+  background: var(--color-white);
+  color: var(--color-black);
+  display: block;
+  width: fit-content;
+  border-bottom: none !important;
+  /* 73.3° angle: horizontal offset = height / tan(73.3°) - calculated dynamically based on actual height */
+  --h2-height: calc(1em * var(--doc-line-height) + 1rem);
+
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--h2-height) / tan(73.3deg)) 100%, 0 100%);
+}
+
+.doc .sect1 > h2 a.anchor,
+.doc .sect2 > h3 a.anchor {
+  color: var(--color-copper-dark);
+  font-weight: var(--body-font-weight-bold);
+}
+
+.doc .sect1 > h2::after {
+  content: "";
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  width: 100vw;
+  height: 2px;
+  background: transparent;
+}
+
+/* Sidebar active item - bold only */
+.nav-item.is-current-page > .nav-link,
+.nav-item.is-active > .nav-link {
+  font-weight: var(--body-font-weight-bold);
+}
+
+/* Copper trace-style links */
+.doc a {
+  color: var(--color-copper-light);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.doc a:hover {
+  color: var(--color-copper);
+  border-bottom-color: var(--color-copper);
+}
+
+/* Code blocks with copper accent */
+.doc pre {
+  border-left: 3px solid var(--color-copper);
+  border-radius: 0;
+}
+
+/* Angled label caps for badges/buttons (like KiBuzzard labels) */
+.doc .badge,
+.doc .label {
+  background: var(--color-copper);
+  color: var(--color-white);
+  padding: 0.25rem 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+  clip-path:
+    polygon(
+      10% 0%,
+      100% 0%,
+      90% 100%,
+      0% 100%
+    ); /* 75° angled caps */
+}
+
+/* Table styling with copper headers */
+.doc table thead {
+  background: var(--color-darkest-gray);
+  border-bottom: 2px solid var(--color-copper);
+}
+
+.doc table th {
+  color: var(--color-white);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.9em;
+}
+
+/* Sidebar blocks with angled bottom-right corner */
+.doc .sidebarblock {
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 1rem), calc(100% - 1rem) 100%, 0 100%);
+}
+
+/* Admonitions with angled corner cutoff */
+.doc .admonitionblock {
+  border-radius: 0;
+}
+
+.doc .admonitionblock td.icon {
+  z-index: 1;
+}
+
+.doc .admonitionblock td.icon i {
+  border-radius: 0;
+  padding-right: 1rem;
+  /* 73.3° angle on top-right, going from top to bottom-left */
+  --icon-height: 1.25rem;
+
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--icon-height) / tan(73.3deg)) 100%, 0 100%);
+}
+
+.doc .admonitionblock td.content {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 1rem), calc(100% - 1rem) 100%, 0 100%);
+}
+
+/* Nav controls container */
+.nav-controls {
+  float: right;
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 1rem;
+  margin-right: 0;
+  padding: 0;
+}
+
+/* Light colored nav buttons */
+.nav-menu-toggle {
+  filter: brightness(2) invert(1);
+}
+
+/* Collapsed sidebar state */
+@media screen and (min-width: 1024px) {
+  .body.nav-is-collapsed .nav-container {
+    width: 0;
+    overflow: hidden;
+    transition: width 0.3s ease;
+  }
+
+  .body.nav-is-collapsed .article {
+    margin-left: 0;
+    transition: margin-left 0.3s ease;
+  }
+}
+
+/* Prevent body scrolling on desktop - only main content should scroll */
+@media screen and (min-width: 1024px) {
+  body {
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  .body {
+    height: calc(100vh - var(--navbar-height));
+    display: flex;
+    flex-direction: column;
+  }
+
+  .toolbar {
+    flex-shrink: 0;
+  }
+
+  .body-content {
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .nav-container {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .nav-container .panels {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .nav-panel-menu {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .nav-panel-explore {
+    flex-shrink: 0;
+  }
+
+  main.article {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+/* iBOM Viewer Integration - fill viewport, no scrolling */
+@media screen and (min-width: 1024px) {
+  .ibom-layout .toolbar {
+    position: static !important;
+  }
+
+  .ibom-layout main.article {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ibom-layout .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+}
+
+/* Remove max-width and use flexbox for full height */
+.ibom-layout .doc {
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* iBOM container and viewer fill available space */
+.ibom-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-near-black);
+  border: 2px solid var(--color-white);
+  border-radius: 0;
+  margin: 0;
+  width: 100%;
+  min-height: 0;
+}
+
+.ibom-viewer {
+  width: 100%;
+  flex: 1;
+  border: none;
+  display: block;
+  background: white;
+  min-height: 0;
+}
+
+/* Footer */
+.footer {
+  border-top: 1px solid var(--color-darker-gray);
+}
+
+/* Toolbar with subtle copper trace */
+.toolbar::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  height: 1px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--color-copper) 50%,
+      transparent 100%
+    );
+  opacity: 0.3;
+}
+
+/* Pagination with copper accents */
+.pagination .page-link {
+  background: var(--color-darkest-gray);
+  border: 1px solid var(--color-darker-gray);
+  color: var(--color-off-white);
+  border-radius: 0;
+}
+
+.pagination .page-link:hover,
+.pagination .page-link.is-current {
+  background: var(--color-copper);
+  border-color: var(--color-copper);
+  color: var(--color-white);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track-color);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-copper-dark);
+  border: 2px solid var(--scrollbar-track-color);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-copper);
+}
+
+/* Module cards for landing page */
+.module-card {
+  background: var(--color-near-black);
+  border: 2px solid var(--color-darker-gray);
+  padding: 2rem;
+  margin-bottom: 2rem;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.module-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background:
+    linear-gradient(
+      45deg,
+      var(--color-copper) 0%,
+      var(--color-white) 50%,
+      var(--color-copper) 100%
+    );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.module-card:hover {
+  border-color: var(--color-copper);
+  transform: translateY(-2px);
+}
+
+.module-card:hover::before {
+  opacity: 1;
+}
+
+.module-card h3 {
+  color: var(--color-white);
+  margin-top: 0;
+}
+
+.module-card .button {
+  background: var(--color-copper);
+  color: var(--color-white);
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  border-radius: 0;
+  display: inline-block;
+  margin-top: 1rem;
+  transition: all 0.2s ease;
+}
+
+.module-card .button:hover {
+  background: var(--color-copper-light);
+  box-shadow: 0 0 12px rgba(184, 115, 51, 0.6);
+}

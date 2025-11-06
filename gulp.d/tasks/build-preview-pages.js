@@ -18,7 +18,13 @@ module.exports = (src, previewSrc, previewDest, sink = () => map()) => (done) =>
   Promise.all([
     loadSampleUiModel(previewSrc),
     toPromise(
-      merge(compileLayouts(src), registerPartials(src), registerHelpers(src), copyImages(previewSrc, previewDest))
+      merge(
+        compileLayouts(src),
+        registerPartials(src),
+        registerHelpers(src),
+        copyImages(previewSrc, previewDest),
+        copyAttachments(previewSrc, previewDest)
+      )
     ),
   ])
     .then(([baseUiModel, { layouts }]) => {
@@ -118,6 +124,13 @@ function compileLayouts (src) {
 function copyImages (src, dest) {
   return vfs
     .src('**/*.{png,svg}', { base: src, cwd: src })
+    .pipe(vfs.dest(dest))
+    .pipe(map((file, enc, next) => next()))
+}
+
+function copyAttachments (src, dest) {
+  return vfs
+    .src('_attachments/**/*', { base: src, cwd: src })
     .pipe(vfs.dest(dest))
     .pipe(map((file, enc, next) => next()))
 }

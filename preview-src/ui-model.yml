@@ -1,7 +1,10 @@
 antoraVersion: '1.0.0'
+asciidoc:
+  extensions:
+  - ../../extensions/ibom-block.js
 site:
   url: http://localhost:5252
-  title: Brand Docs
+  title: A Longer Brand Title And Longer
   homeUrl: &home_url /xyz/5.2/index.html
   components:
   - name: abc
@@ -109,6 +112,14 @@ page:
         urlType: internal
       - content: English + 中文
         url: '/xyz/5.2/index.html#english+中文'
+        urlType: internal
+    - content: Hardware Examples
+      items:
+      - content: Quad VCA Mixer
+        url: /xyz/5.2/hardware-example.html
+        urlType: internal
+      - content: Interactive BOM
+        url: /xyz/5.2/ibom-example.html
         urlType: internal
     - content: Liber Recusabo
       url: '#liber-recusabo'

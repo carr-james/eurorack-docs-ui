@@ -1,11 +1,11 @@
 {
-  "name": "@antora/ui-default",
-  "description": "An archetype project that produces a UI for creating documentation sites with Antora",
-  "homepage": "https://gitlab.com/antora/antora-ui-default",
+  "name": "eurorack-docs-ui",
+  "description": "Custom dark UI bundle for Eurorack hardware documentation with black panel aesthetic",
+  "homepage": "https://github.com/carr-james/eurorack-docs-ui",
   "license": "MPL-2.0",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/antora/antora-ui-default.git"
+    "url": "https://github.com/carr-james/eurorack-docs-ui.git"
   },
   "engines": {
     "node": ">= 8.0.0"
@@ -13,10 +13,14 @@
   "browserslist": [
     "last 2 versions"
   ],
+  "scripts": {
+    "customize-ibom": "node scripts/customize-ibom.js"
+  },
   "devDependencies": {
     "@asciidoctor/core": "~2.2",
     "@fontsource/roboto": "~4.5",
     "@fontsource/roboto-mono": "~4.5",
+    "@fontsource/jetbrains-mono": "~4.5",
     "@vscode/gulp-vinyl-zip": "~2.5",
     "autoprefixer": "~9.7",
     "browser-pack-flat": "~3.4",

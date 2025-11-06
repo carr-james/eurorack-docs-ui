@@ -1,5 +1,6 @@
 ;(function () {
   'use strict'
+  /* global localStorage */
 
   var SECT_CLASS_RX = /^sect(\d)$/
 
@@ -16,13 +17,33 @@
   if (!menuPanel) return
   var explorePanel = navContainer.querySelector('[data-panel=explore]')
 
+  // Add unique IDs to all nav items
+  var navItemCounter = 0
+  find(menuPanel, '.nav-item').forEach(function (item) {
+    item.setAttribute('data-nav-id', 'nav-item-' + navItemCounter++)
+  })
+
   var currentPageItem = menuPanel.querySelector('.is-current-page')
   var originalPageItem = currentPageItem
+
   if (currentPageItem) {
     activateCurrentPath(currentPageItem)
     scrollItemToMidpoint(menuPanel, currentPageItem.querySelector('.nav-link'))
   } else {
     menuPanel.scrollTop = 0
+  }
+
+  // Restore expanded state from localStorage (after activateCurrentPath and adding IDs)
+  try {
+    var expandedState = JSON.parse(localStorage.getItem('nav-expanded-items') || '[]')
+    expandedState.forEach(function (navId) {
+      var navItem = menuPanel.querySelector('[data-nav-id="' + navId + '"]')
+      if (navItem && navItem.classList.contains('nav-item')) {
+        navItem.classList.add('is-active')
+      }
+    })
+  } catch (e) {
+    console.error('Error restoring nav state:', e)
   }
 
   find(menuPanel, '.nav-item-toggle').forEach(function (btn) {
@@ -37,6 +58,15 @@
 
   if (navMenuToggle && menuPanel.querySelector('.nav-item-toggle')) {
     navMenuToggle.style.display = ''
+
+    // Set navMenuToggle state based on whether any items are expanded (use setTimeout to run after restore)
+    setTimeout(function () {
+      var hasExpandedItems = menuPanel.querySelector('.nav-item.is-active')
+      if (hasExpandedItems) {
+        navMenuToggle.classList.add('is-active')
+      }
+    }, 0)
+
     navMenuToggle.addEventListener('click', function () {
       var collapse = !this.classList.toggle('is-active')
       find(menuPanel, '.nav-item > .nav-item-toggle').forEach(function (btn) {
@@ -48,6 +78,7 @@
       } else {
         menuPanel.scrollTop = 0
       }
+      saveExpandedState()
     })
   }
 
@@ -64,6 +95,8 @@
   menuPanel.addEventListener('mousedown', function (e) {
     if (e.detail > 1) e.preventDefault()
   })
+
+  var userClickedNavLink = false
 
   function onHashChange () {
     var navLink
@@ -94,16 +127,26 @@
       return
     }
     if (navItem === currentPageItem) return
-    find(menuPanel, '.nav-item.is-active').forEach(function (el) {
-      el.classList.remove('is-active', 'is-current-path', 'is-current-page')
+    find(menuPanel, '.nav-item.is-current-page, .nav-item.is-current-path').forEach(function (el) {
+      el.classList.remove('is-current-path', 'is-current-page')
     })
     navItem.classList.add('is-current-page')
     currentPageItem = navItem
     activateCurrentPath(navItem)
-    scrollItemToMidpoint(menuPanel, navLink)
+    // Only scroll nav-panel to midpoint if user didn't click a nav-link
+    if (!userClickedNavLink) {
+      scrollItemToMidpoint(menuPanel, navLink)
+    }
+    userClickedNavLink = false
   }
 
   if (menuPanel.querySelector('.nav-link[href^="#"]')) {
+    // Add click listeners to nav-links to prevent nav-panel autoscroll
+    find(menuPanel, '.nav-link[href^="#"]').forEach(function (link) {
+      link.addEventListener('click', function () {
+        userClickedNavLink = true
+      })
+    })
     if (window.location.hash) onHashChange()
     window.addEventListener('hashchange', onHashChange)
   }
@@ -120,6 +163,15 @@
     navItem.classList.add('is-active')
   }
 
+  function saveExpandedState () {
+    var expanded = find(menuPanel, '.nav-item.is-active')
+      .map(function (item) {
+        return item.getAttribute('data-nav-id')
+      })
+      .filter(function (id) { return id })
+    localStorage.setItem('nav-expanded-items', JSON.stringify(expanded))
+  }
+
   function toggleActive () {
     if (this.classList.toggle('is-active')) {
       var padding = parseFloat(window.getComputedStyle(this).marginTop)
@@ -128,6 +180,7 @@
       var overflowY = (rect.bottom - menuPanelRect.top - menuPanelRect.height + padding).toFixed()
       if (overflowY > 0) menuPanel.scrollTop += Math.min((rect.top - menuPanelRect.top - padding).toFixed(), overflowY)
     }
+    saveExpandedState()
   }
 
   function showNav (e) {

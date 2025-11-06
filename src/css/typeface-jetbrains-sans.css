@@ -1,0 +1,27 @@
+@font-face {
+  font-family: "JetBrains Sans";
+  font-style: normal;
+  font-weight: 400;
+  src: url(../font/JetBrainsSans-Regular.woff2) format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Sans";
+  font-style: normal;
+  font-weight: 500;
+  src: url(../font/JetBrainsSans-Medium.woff2) format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Sans";
+  font-style: normal;
+  font-weight: 600;
+  src: url(../font/JetBrainsSans-SemiBold.woff2) format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Sans";
+  font-style: normal;
+  font-weight: 700;
+  src: url(../font/JetBrainsSans-Bold.woff2) format("woff2");
+}
