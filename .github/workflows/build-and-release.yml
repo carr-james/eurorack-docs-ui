@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # Required for npm provenance
 
 jobs:
   build:
@@ -22,7 +23,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -43,15 +44,31 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update npm to latest
+        run: npm install -g npm@latest
+
       - name: Download UI bundle
         uses: actions/download-artifact@v4
         with:
           name: ui-bundle
+          path: build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ui-bundle.zip
+          files: build/ui-bundle.zip
           body: |
             Eurorack Docs UI Bundle
 
@@ -60,6 +77,11 @@ jobs:
             - 45° angled white graphics
             - Copper accent colors
             - Module navigation dropdown
+
+            ## Installation
+            ```bash
+            npm install @carr-james/eurorack-docs-ui
+            ```
           draft: false
           prerelease: false
         env:
@@ -70,20 +92,44 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update npm to latest
+        run: npm install -g npm@latest
+
       - name: Download UI bundle
         uses: actions/download-artifact@v4
         with:
           name: ui-bundle
+          path: build
+
+      - name: Bump version to latest
+        run: npm version prerelease --preid=latest --no-git-tag-version
+
+      - name: Publish to npm with next tag
+        run: npm publish --provenance --access public --tag next
 
       - name: Update latest release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: latest
-          files: ui-bundle.zip
+          files: build/ui-bundle.zip
           body: |
             Latest Eurorack Docs UI Bundle (auto-updated from main branch)
 
             Custom dark theme with black panel aesthetic.
+
+            ## Installation
+            ```bash
+            npm install @carr-james/eurorack-docs-ui@next
+            ```
           draft: false
           prerelease: true
         env:
