@@ -1,6 +1,6 @@
 {
   "name": "@carr-james/eurorack-docs-ui",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Custom dark UI bundle for Eurorack hardware documentation with black panel aesthetic",
   "homepage": "https://github.com/carr-james/eurorack-docs-ui",
   "license": "MPL-2.0",
@@ -9,9 +9,13 @@
     "url": "https://github.com/carr-james/eurorack-docs-ui.git"
   },
   "main": "extensions/index.js",
+  "bin": {
+    "eurorack-build": "./bin/eurorack-build.js"
+  },
   "files": [
     "extensions/**/*.js",
-    "build/ui-bundle.zip"
+    "build/ui-bundle.zip",
+    "bin/eurorack-build.js"
   ],
   "engines": {
     "node": ">= 8.0.0"
