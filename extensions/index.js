@@ -9,5 +9,8 @@ module.exports = {
   ibomBlock: require('./ibom-block'),
 
   // Antora extension for processing iBOM files
-  ibomProcessor: require('./ibom-processor')
+  ibomProcessor: require('./ibom-processor'),
+
+  // Antora extension for collector hash-based caching
+  collectorCacheExtension: require('./collector-cache-extension')
 }
