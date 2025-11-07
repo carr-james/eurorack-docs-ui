@@ -32,12 +32,29 @@ module.exports.register = function () {
 
     for (const { name: componentName, origins } of contentAggregate) {
       for (const origin of origins) {
-        // Use collectorWorktree if available, otherwise use origin.worktree (for local builds)
-        const worktree = origin.collectorWorktree || origin.worktree
         const cacheConfig = origin.descriptor.ext?.collectorCache
 
         if (!cacheConfig) {
           logger.debug(`No collector-cache configuration for ${componentName}`)
+          continue
+        }
+
+        // Determine worktree path
+        // For local builds: origin.worktree is the local path
+        // For remote builds: need to construct the collector worktree path
+        let worktree
+        if (origin.worktree) {
+          worktree = origin.worktree
+        } else {
+          // Construct collector worktree path: .cache/antora/collector/{name}@{refname}-{refhash}
+          const collectorCacheDir = path.join(playbook.dir, playbook.runtime.cacheDir || '.cache/antora', 'collector')
+          const refname = origin.branch || origin.tag || 'HEAD'
+          const refhash = origin.refhash || ''
+          worktree = path.join(collectorCacheDir, `${componentName}@${refname}-${refhash}`)
+        }
+
+        if (!worktree) {
+          logger.warn(`Cannot determine worktree for ${componentName}`)
           continue
         }
 
