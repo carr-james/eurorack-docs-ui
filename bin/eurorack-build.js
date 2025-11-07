@@ -69,10 +69,30 @@ try {
 }
 
 /**
+ * Find git repository root by walking up directory tree
+ */
+function findGitRoot(startPath) {
+  let currentPath = startPath
+  while (currentPath !== path.parse(currentPath).root) {
+    if (fs.existsSync(path.join(currentPath, '.git'))) {
+      return currentPath
+    }
+    currentPath = path.dirname(currentPath)
+  }
+  return null
+}
+
+/**
  * Detect build context based on directory structure
  */
 function detectContext(options) {
   const cwd = process.cwd()
+
+  // Find git repository root
+  const gitRoot = findGitRoot(cwd)
+  if (!gitRoot) {
+    throw new Error('Not in a git repository. Antora requires a git repository for local builds.')
+  }
 
   // Auto-detect type if not specified
   let type = options.type
@@ -89,12 +109,15 @@ function detectContext(options) {
   }
 
   // Determine playbook and paths
-  let playbook, buildDir, workDir, componentName
+  let playbook, buildDir, workDir, dockerWorkDir, componentName
 
   if (type === 'component') {
     playbook = options.mode === 'local' ? 'local-site.yml' : 'local-site.yml'
     buildDir = 'build'
-    workDir = cwd
+    // Mount git root, but work from subdirectory if needed
+    workDir = gitRoot
+    // Relative path from git root to cwd for Docker working directory
+    dockerWorkDir = path.relative(gitRoot, cwd) || '.'
 
     // Try to detect component name from antora.yml
     const antoraYml = path.join(cwd, 'antora.yml')
@@ -109,7 +132,8 @@ function detectContext(options) {
     // Unified
     playbook = options.mode === 'local' ? 'local-playbook.yml' : 'antora-playbook.yml'
     buildDir = 'build'
-    workDir = cwd
+    workDir = gitRoot
+    dockerWorkDir = path.relative(gitRoot, cwd) || '.'
   }
 
   // Find eurorack-docs-ui path (sibling directory)
@@ -136,6 +160,7 @@ function detectContext(options) {
     playbook,
     buildDir,
     workDir,
+    dockerWorkDir,
     componentName,
     hasLocalUI: hasLocalUI && options.mode === 'local',
     uiPath: hasLocalUI ? uiPath : null,
@@ -147,16 +172,17 @@ function detectContext(options) {
  * Run Docker build
  */
 function runBuild(context, options) {
-  const { type, mode, playbook, buildDir, workDir, hasLocalUI, uiPath, componentPaths, componentName } = context
+  const { type, mode, playbook, buildDir, workDir, dockerWorkDir, hasLocalUI, uiPath, componentPaths, componentName } = context
 
   console.log('==================================')
   console.log(`Building ${type === 'unified' ? 'Unified' : 'Component'} Documentation (${mode})`)
   console.log('==================================')
   console.log()
 
-  // Check playbook exists
-  if (!fs.existsSync(path.join(workDir, playbook))) {
-    throw new Error(`Playbook not found: ${playbook}`)
+  // Check playbook exists (in the appropriate subdirectory)
+  const playbookPath = dockerWorkDir !== '.' ? path.join(workDir, dockerWorkDir, playbook) : path.join(workDir, playbook)
+  if (!fs.existsSync(playbookPath)) {
+    throw new Error(`Playbook not found: ${playbookPath}`)
   }
 
   // Clean if requested
@@ -217,9 +243,12 @@ function runBuild(context, options) {
   const volumeArgs = volumes.map(v => `-v ${v}`).join(' \\\n    ')
   const envArgs = envVars.map(e => `-e ${e}`).join(' \\\n    ')
 
+  // Determine working directory path for Docker (-w flag)
+  const workPath = dockerWorkDir !== '.' ? `/work/${dockerWorkDir}` : '/work'
+
   const dockerCmd = `docker run --rm \\
     ${volumeArgs} \\
-    -w /work \\
+    -w ${workPath} \\
     ${envArgs} \\
     ghcr.io/carr-james/eurorack-docker:latest \\
     bash -c "
@@ -241,7 +270,7 @@ function runBuild(context, options) {
         fi
 
         echo 'Fixing file ownership...'
-        chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID /work/${buildDir} /work/node_modules /work/.cache 2>/dev/null || true
+        chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID ${buildDir} node_modules .cache 2>/dev/null || true
         ${type === 'component' ? 'chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID /work/hardware/**/kibot-output 2>/dev/null || true' : ''}
         ${type === 'unified' && mode === 'local' ? 'chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID /cem3340-vco/hardware/**/kibot-output 2>/dev/null || true' : ''}
         ${type === 'unified' && mode === 'local' ? 'chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID /quad-vca-mixer/hardware/**/kibot-output 2>/dev/null || true' : ''}
@@ -257,7 +286,9 @@ function runBuild(context, options) {
   execSync(dockerCmd, { stdio: 'inherit', shell: '/bin/bash' })
 
   // Check if build succeeded
-  const sitePath = path.join(workDir, buildDir, 'site')
+  const sitePath = dockerWorkDir !== '.'
+    ? path.join(workDir, dockerWorkDir, buildDir, 'site')
+    : path.join(workDir, buildDir, 'site')
   if (fs.existsSync(sitePath)) {
     console.log()
     console.log('==================================')
