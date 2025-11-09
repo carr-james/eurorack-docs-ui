@@ -1,8 +1,8 @@
 /**
- * Collector Cache Extension for Antora
+ * Collector Cache Extension for Antora - Content-Addressable Storage
  *
- * Provides hash-based change detection for collector commands to skip
- * regeneration when source files haven't changed.
+ * Provides content-addressable caching for collector commands using source file hashes.
+ * Automatically deduplicates outputs across different versions when source files match.
  *
  * @see https://docs.antora.org/antora/latest/extend/extension-tutorial/
  * @see https://docs.antora.org/collector-extension/latest/
@@ -13,7 +13,7 @@ const path = require('path')
 const crypto = require('crypto')
 
 const EXTENSION_NAME = 'collector-cache-extension'
-const DEFAULT_HASH_DIR = '.cache/antora/collector-cache'
+const DEFAULT_CACHE_DIR = '.cache/antora/collector-cache'
 
 /**
  * Register the collector cache extension
@@ -21,14 +21,18 @@ const DEFAULT_HASH_DIR = '.cache/antora/collector-cache'
 module.exports.register = function () {
   const logger = this.getLogger(EXTENSION_NAME)
 
-  // Track entries for hash cache updates after build
+  // Track entries for cache updates after build
   const cacheEntries = []
 
   /**
    * Main event: Process collector-cache configuration before collector runs
    */
   this.once('contentAggregated', ({ contentAggregate, playbook }) => {
+    const dryRun = process.env.DRY_RUN === 'true'
     logger.info('Processing collector-cache configuration')
+    if (dryRun) {
+      logger.info('DRY RUN MODE - will exit after cache check')
+    }
 
     for (const { name: componentName, origins } of contentAggregate) {
       for (const origin of origins) {
@@ -40,25 +44,87 @@ module.exports.register = function () {
         }
 
         // Determine worktree path
-        // For local builds: origin.worktree is the local path
-        // For remote builds: need to construct the collector worktree path
-        let worktree
-        if (origin.worktree) {
-          worktree = origin.worktree
-        } else {
-          // Construct collector worktree path: .cache/antora/collector/{name}@{refname}-{refhash}
-          const collectorCacheDir = path.join(playbook.dir, playbook.runtime.cacheDir || '.cache/antora', 'collector')
-          const refname = origin.branch || origin.tag || 'HEAD'
-          const refhash = origin.refhash || ''
-          worktree = path.join(collectorCacheDir, `${componentName}@${refname}-${refhash}`)
-        }
+        let worktree = origin.worktree
 
         if (!worktree) {
-          logger.warn(`Cannot determine worktree for ${componentName}`)
+          // For remote builds: find collector worktree directory
+          const collectorCacheDir = path.join(playbook.dir, playbook.runtime.cacheDir || '.cache/antora', 'collector')
+          const refname = origin.refname || origin.branch || origin.tag || 'HEAD'
+
+          // Extract repository name from URL for worktree prefix
+          const url = origin.url || ''
+          const repoName = path.basename(url, '.git')
+          const worktreePrefix = `${repoName}@${refname}-`
+
+          if (fs.existsSync(collectorCacheDir)) {
+            const entries = fs.readdirSync(collectorCacheDir)
+            const matchingEntries = entries.filter(e => e.startsWith(worktreePrefix))
+
+            if (matchingEntries.length > 0) {
+              const worktreeDirName = matchingEntries[matchingEntries.length - 1]
+              worktree = path.join(collectorCacheDir, worktreeDirName)
+              logger.debug(`Found worktree: ${worktree}`)
+            }
+          }
+        }
+
+        // Initialize collector array if needed
+        if (!origin.descriptor.ext.collector) {
+          origin.descriptor.ext.collector = []
+        }
+
+        // If no worktree, run all collectors and track for caching (first build)
+        if (!worktree) {
+          logger.info(`No worktree found for ${componentName} - will run all collectors`)
+          const entries = Array.isArray(cacheConfig) ? cacheConfig : cacheConfig.entries
+          if (entries && Array.isArray(entries)) {
+            logger.info(`Adding ${entries.length} collector entries for ${componentName}`)
+
+            // Determine cache directory and worktree location
+            const cacheDir = (cacheConfig.cacheDir || DEFAULT_CACHE_DIR)
+            const componentHashDir = path.join(playbook.dir, cacheDir, 'hashes', componentName)
+            const collectorCacheDir = path.join(playbook.dir, playbook.runtime.cacheDir || '.cache/antora', 'collector')
+            const refname = origin.refname || origin.branch || origin.tag || 'HEAD'
+
+            // Extract repository name from URL for worktree prefix
+            const url = origin.url || ''
+            const repoName = path.basename(url, '.git')
+            const worktreePrefix = `${repoName}@${refname}-`
+
+            for (const entry of entries) {
+              const { run, scan } = entry
+
+              // Note: Antora normalizes YAML keys to lowercase, so cacheDir becomes cachedir
+              const cachedir = run?.cachedir || run?.cacheDir
+              if (!run || !run.key || !run.sources || !cachedir) {
+                logger.warn(`Skipping invalid entry (missing run.key, run.sources, or run.cachedir)`)
+                logger.debug(`Entry structure: ${JSON.stringify(entry)}`)
+                continue
+              }
+
+              // Add to collector to run
+              origin.descriptor.ext.collector.push(entry)
+
+              // Track for caching after build
+              cacheEntries.push({
+                componentName,
+                componentHashDir,
+                key: run.key,
+                sources: run.sources,
+                collectorCacheDir,
+                worktreePrefix,
+                outputDir: cachedir,
+                sourceHashes: null,
+                contentHash: null
+              })
+            }
+          } else {
+            logger.warn(`No entries found in cacheConfig for ${componentName}`)
+          }
           continue
         }
 
-        // Handle both array (direct entries) and object (with entries property) formats
+        // Handle both array and object formats
         const entries = Array.isArray(cacheConfig) ? cacheConfig : cacheConfig.entries
 
         if (!entries || !Array.isArray(entries)) {
@@ -66,93 +132,202 @@ module.exports.register = function () {
           continue
         }
 
-        // Get hashDir from config if it's an object, otherwise use default
-        const hashDir = (cacheConfig.hashDir || DEFAULT_HASH_DIR)
-        const componentHashDir = path.join(playbook.dir, hashDir, componentName)
+        // Get cache directory
+        const cacheDir = (cacheConfig.cacheDir || DEFAULT_CACHE_DIR)
+        const componentHashDir = path.join(playbook.dir, cacheDir, 'hashes', componentName)
 
         logger.debug(`Processing ${entries.length} entries for ${componentName}`)
-
-        // Initialize collector array if needed
-        if (!origin.descriptor.ext.collector) {
-          origin.descriptor.ext.collector = []
-        }
 
         for (const entry of entries) {
           const { run, scan } = entry
 
-          if (!run || !run.key || !run.sources || !run.cacheDir) {
-            logger.warn(`Skipping invalid entry (missing run.key, run.sources, or run.cacheDir)`)
+          // Note: Antora normalizes YAML keys to lowercase, so cacheDir becomes cachedir
+          const cachedir = run?.cachedir || run?.cacheDir
+          if (!run || !run.key || !run.sources || !cachedir) {
+            logger.warn(`Skipping invalid entry (missing run.key, run.sources, or run.cachedir)`)
             continue
           }
 
-          const { key, sources, cacheDir, command } = run
+          const { key, sources } = run
+          const outputDir = cachedir
 
           try {
-            // Compute current hashes
-            const currentHashes = computeHashes(worktree, sources)
-
-            // Load cached hashes
-            const cachedHashes = loadHashCache(componentHashDir, key, logger)
-
-            // Check if outputs exist
-            const outputsExist = checkOutputsExist(worktree, cacheDir, logger)
-
-            // Decide whether to skip execution
-            const forceRun = process.env.FORCE_COLLECTOR === 'true'
-            const shouldSkip = !forceRun &&
-                              hashesMatch(currentHashes, cachedHashes) &&
-                              outputsExist
-
-            if (shouldSkip) {
-              logger.info(`Cache HIT for ${componentName}/${key} - skipping execution`)
-              // Register scan-only (collect existing files)
-              if (scan) {
-                origin.descriptor.ext.collector.push({ scan })
-              }
-            } else {
-              const reason = forceRun ? 'FORCE_COLLECTOR=true' :
-                           !outputsExist ? 'outputs missing' :
-                           !cachedHashes ? 'no cache' : 'source files changed'
-              logger.info(`Cache MISS for ${componentName}/${key} (${reason}) - will execute`)
-
-              // Register full entry (run + scan)
-              origin.descriptor.ext.collector.push({ run, scan })
-
-              // Track for cache update after build
+            // Check if worktree exists
+            if (!fs.existsSync(worktree)) {
+              logger.debug(`Worktree does not exist yet for ${componentName}/${key} - cache MISS`)
+              origin.descriptor.ext.collector.push(entry)
               cacheEntries.push({
                 componentName,
                 componentHashDir,
                 key,
                 sources,
                 worktree,
-                currentHashes
+                outputDir,
+                sourceHashes: null,
+                contentHash: null
+              })
+              continue
+            }
+
+            // Compute source file hashes
+            const sourceHashes = computeHashes(worktree, sources)
+
+            if (sourceHashes === null) {
+              logger.debug(`Source files not found for ${componentName}/${key} - cache MISS`)
+              origin.descriptor.ext.collector.push(entry)
+              cacheEntries.push({
+                componentName,
+                componentHashDir,
+                key,
+                sources,
+                worktree,
+                outputDir,
+                sourceHashes: null,
+                contentHash: null
+              })
+              continue
+            }
+
+            // Compute content hash from source hashes
+            const contentHash = computeContentHash(sourceHashes)
+
+            // Look up pointer file
+            const pointerPath = path.join(componentHashDir, key, `${contentHash}.json`)
+            const pointer = loadPointerFile(pointerPath, logger)
+
+            // Check if cached outputs exist
+            const forceRun = process.env.FORCE_COLLECTOR === 'true'
+            let cachedOutputsExist = false
+
+            if (pointer) {
+              const cachedOutputPath = path.join(playbook.dir, cacheDir, 'outputs', pointer.outputDir, outputDir)
+              cachedOutputsExist = checkOutputsExist(cachedOutputPath, logger)
+            }
+
+            const shouldSkip = !forceRun && pointer && cachedOutputsExist
+
+            if (shouldSkip) {
+              logger.info(`Cache HIT for ${componentName}/${key} (content: ${contentHash.substring(0, 12)}...)`)
+
+              // Scan from cached outputs
+              if (scan) {
+                // Build absolute path to cached scan directory
+                const cachedScanPath = path.join(playbook.dir, cacheDir, 'outputs', pointer.outputDir, scan.dir)
+                origin.descriptor.ext.collector.push({
+                  run: {
+                    command: 'true'  // No-op
+                  },
+                  scan: {
+                    dir: cachedScanPath,
+                    files: scan.files,
+                    into: scan.into
+                  }
+                })
+              }
+            } else {
+              const reason = forceRun ? 'FORCE_COLLECTOR=true' :
+                           !pointer ? 'no cache entry' : 'cached outputs missing'
+              logger.info(`Cache MISS for ${componentName}/${key} (${reason})`)
+
+              // Run collector
+              origin.descriptor.ext.collector.push({ run, scan })
+
+              // Track for cache update
+              cacheEntries.push({
+                componentName,
+                componentHashDir,
+                key,
+                sources,
+                worktree,
+                outputDir,
+                sourceHashes,
+                contentHash
               })
             }
           } catch (error) {
             logger.error(`Error processing entry ${componentName}/${key}: ${error.message}`)
             logger.debug(error.stack)
-            // On error, run the command to be safe
             origin.descriptor.ext.collector.push({ run, scan })
           }
         }
       }
     }
+
+    if (dryRun) {
+      logger.info('DRY RUN complete - exiting')
+      process.exit(0)
+    }
   })
 
   /**
-   * After build: Update hash cache for entries that were executed
+   * After build: Update cache with new outputs
    */
   this.on('beforePublish', ({ playbook }) => {
-    logger.info(`Updating hash cache for ${cacheEntries.length} entries`)
+    logger.info(`Updating cache for ${cacheEntries.length} entries`)
+
+    const cacheDir = DEFAULT_CACHE_DIR
 
     for (const entry of cacheEntries) {
       try {
-        updateHashCache(
-          entry.componentHashDir,
-          entry.key,
-          entry.currentHashes,
-          logger
-        )
+        // Determine worktree path if not set
+        let worktree = entry.worktree
+        if (!worktree && entry.collectorCacheDir && entry.worktreePrefix) {
+          // Find the worktree created by collector
+          if (fs.existsSync(entry.collectorCacheDir)) {
+            const entries = fs.readdirSync(entry.collectorCacheDir)
+            const matchingEntries = entries.filter(e => e.startsWith(entry.worktreePrefix))
+
+            if (matchingEntries.length > 0) {
+              const worktreeDirName = matchingEntries[matchingEntries.length - 1]
+              worktree = path.join(entry.collectorCacheDir, worktreeDirName)
+              logger.debug(`Found worktree for caching: ${worktree}`)
+            }
+          }
+
+          if (!worktree) {
+            logger.warn(`Worktree not found for ${entry.componentName}/${entry.key}`)
+            continue
+          }
+        }
+
+        // Compute hashes if not done yet
+        let sourceHashes = entry.sourceHashes
+        let contentHash = entry.contentHash
+
+        if (!sourceHashes) {
+          sourceHashes = computeHashes(worktree, entry.sources)
+          if (!sourceHashes) {
+            logger.warn(`Source files still not found for ${entry.componentName}/${entry.key}`)
+            continue
+          }
+          contentHash = computeContentHash(sourceHashes)
+        }
+
+        // Create pointer file
+        const pointerDir = path.join(entry.componentHashDir, entry.key)
+        fs.mkdirSync(pointerDir, { recursive: true })
+
+        const pointer = {
+          outputDir: contentHash,
+          scanDir: entry.outputDir,
+          sources: sourceHashes,
+          timestamp: new Date().toISOString()
+        }
+
+        const pointerPath = path.join(pointerDir, `${contentHash}.json`)
+        fs.writeFileSync(pointerPath, JSON.stringify(pointer, null, 2), 'utf8')
+        logger.debug(`Created pointer: ${pointerPath}`)
+
+        // Copy outputs to content-addressed directory
+        const sourceOutputPath = path.join(worktree, entry.outputDir)
+        const cachedOutputPath = path.join(playbook.dir, cacheDir, 'outputs', contentHash, entry.outputDir)
+
+        if (fs.existsSync(sourceOutputPath)) {
+          copyDirectory(sourceOutputPath, cachedOutputPath, logger)
+          logger.info(`Cached outputs for ${entry.componentName}/${entry.key} → ${contentHash.substring(0, 12)}...`)
+        } else {
+          logger.warn(`Output directory not found: ${sourceOutputPath}`)
+        }
       } catch (error) {
         logger.error(`Failed to update cache for ${entry.componentName}/${entry.key}: ${error.message}`)
       }
@@ -162,9 +337,6 @@ module.exports.register = function () {
 
 /**
  * Compute SHA-256 hashes for source files
- * @param {string} worktree - Worktree directory path
- * @param {string[]} sources - Source file paths (relative to worktree)
- * @returns {Object} Hash map { filepath: hash }
  */
 function computeHashes (worktree, sources) {
   const hashes = {}
@@ -173,7 +345,7 @@ function computeHashes (worktree, sources) {
     const filePath = path.join(worktree, source)
 
     if (!fs.existsSync(filePath)) {
-      throw new Error(`Source file not found: ${source}`)
+      return null
     }
 
     const content = fs.readFileSync(filePath)
@@ -185,90 +357,68 @@ function computeHashes (worktree, sources) {
 }
 
 /**
- * Load cached hashes from disk
- * @param {string} componentHashDir - Component hash directory
- * @param {string} key - Cache key
- * @param {Object} logger - Logger instance
- * @returns {Object|null} Cached hash map or null if not found
+ * Compute content hash from source file hashes
  */
-function loadHashCache (componentHashDir, key, logger) {
-  const cacheFile = path.join(componentHashDir, `${key}.json`)
+function computeContentHash (sourceHashes) {
+  // Sort keys for consistent ordering
+  const sortedKeys = Object.keys(sourceHashes).sort()
 
-  if (!fs.existsSync(cacheFile)) {
-    logger.debug(`No cache file found: ${cacheFile}`)
+  // Concatenate hashes in sorted order
+  const combined = sortedKeys.map(key => sourceHashes[key]).join('')
+
+  // Hash the combined string
+  return crypto.createHash('sha256').update(combined).digest('hex')
+}
+
+/**
+ * Load pointer file from disk
+ */
+function loadPointerFile (pointerPath, logger) {
+  if (!fs.existsSync(pointerPath)) {
+    logger.debug(`No pointer file: ${pointerPath}`)
     return null
   }
 
   try {
-    const content = fs.readFileSync(cacheFile, 'utf8')
-    const cache = JSON.parse(content)
-    return cache.sources || null
+    const content = fs.readFileSync(pointerPath, 'utf8')
+    return JSON.parse(content)
   } catch (error) {
-    logger.warn(`Failed to read cache file ${cacheFile}: ${error.message}`)
+    logger.warn(`Failed to read pointer file ${pointerPath}: ${error.message}`)
     return null
   }
 }
 
 /**
- * Compare current hashes with cached hashes
- * @param {Object} current - Current hash map
- * @param {Object|null} cached - Cached hash map
- * @returns {boolean} True if hashes match
- */
-function hashesMatch (current, cached) {
-  if (!cached) return false
-
-  const currentKeys = Object.keys(current).sort()
-  const cachedKeys = Object.keys(cached).sort()
-
-  // Check if same files are tracked
-  if (currentKeys.length !== cachedKeys.length) return false
-  if (!currentKeys.every((key, i) => key === cachedKeys[i])) return false
-
-  // Check if hashes match
-  return currentKeys.every(key => current[key] === cached[key])
-}
-
-/**
  * Check if output directory exists and contains files
- * @param {string} worktree - Worktree directory path
- * @param {string} cacheDir - Output directory path (relative to worktree)
- * @param {Object} logger - Logger instance
- * @returns {boolean} True if outputs exist
  */
-function checkOutputsExist (worktree, cacheDir, logger) {
-  const outputPath = path.join(worktree, cacheDir)
-
+function checkOutputsExist (outputPath, logger) {
   if (!fs.existsSync(outputPath)) {
-    logger.debug(`Output directory does not exist: ${cacheDir}`)
+    logger.debug(`Output directory does not exist: ${outputPath}`)
     return false
   }
 
   try {
     const stat = fs.statSync(outputPath)
     if (!stat.isDirectory()) {
-      logger.debug(`Output path is not a directory: ${cacheDir}`)
+      logger.debug(`Output path is not a directory: ${outputPath}`)
       return false
     }
 
-    // Check if directory contains files (recursive check)
     const hasFiles = checkDirectoryHasFiles(outputPath)
     if (!hasFiles) {
-      logger.debug(`Output directory is empty: ${cacheDir}`)
+      logger.debug(`Output directory is empty: ${outputPath}`)
       return false
     }
 
     return true
   } catch (error) {
-    logger.debug(`Error checking output directory ${cacheDir}: ${error.message}`)
+    logger.debug(`Error checking output directory ${outputPath}: ${error.message}`)
     return false
   }
 }
 
 /**
- * Recursively check if directory contains any files
- * @param {string} dirPath - Directory path
- * @returns {boolean} True if directory contains files
+ * Recursively check if directory contains files
  */
 function checkDirectoryHasFiles (dirPath) {
   const entries = fs.readdirSync(dirPath, { withFileTypes: true })
@@ -287,22 +437,30 @@ function checkDirectoryHasFiles (dirPath) {
 }
 
 /**
- * Update hash cache on disk
- * @param {string} componentHashDir - Component hash directory
- * @param {string} key - Cache key
- * @param {Object} hashes - Hash map to save
- * @param {Object} logger - Logger instance
+ * Recursively copy directory contents
  */
-function updateHashCache (componentHashDir, key, hashes, logger) {
-  // Ensure directory exists
-  fs.mkdirSync(componentHashDir, { recursive: true })
-
-  const cacheFile = path.join(componentHashDir, `${key}.json`)
-  const cacheData = {
-    sources: hashes,
-    timestamp: new Date().toISOString()
+function copyDirectory (source, destination, logger) {
+  // Remove destination if it exists
+  if (fs.existsSync(destination)) {
+    fs.rmSync(destination, { recursive: true, force: true })
   }
 
-  fs.writeFileSync(cacheFile, JSON.stringify(cacheData, null, 2), 'utf8')
-  logger.debug(`Updated cache file: ${cacheFile}`)
+  // Create destination directory
+  fs.mkdirSync(destination, { recursive: true })
+
+  // Copy contents
+  const entries = fs.readdirSync(source, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const sourcePath = path.join(source, entry.name)
+    const destPath = path.join(destination, entry.name)
+
+    if (entry.isDirectory()) {
+      copyDirectory(sourcePath, destPath, logger)
+    } else if (entry.isFile()) {
+      fs.copyFileSync(sourcePath, destPath)
+    }
+  }
+
+  logger.debug(`Copied directory from ${source} to ${destination}`)
 }
