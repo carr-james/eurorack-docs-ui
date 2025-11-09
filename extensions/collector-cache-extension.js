@@ -211,17 +211,19 @@ module.exports.register = function () {
 
               // Scan from cached outputs
               if (scan) {
-                // Build absolute path to cached scan directory
-                const cachedScanPath = path.join(playbook.dir, cacheDir, 'outputs', pointer.outputDir, scan.dir)
+                // Handle scan as array or single object
+                const scanEntries = Array.isArray(scan) ? scan : [scan]
+                const scanConfigs = scanEntries.map(scanEntry => ({
+                  dir: path.join(playbook.dir, cacheDir, 'outputs', pointer.outputDir, scanEntry.dir),
+                  files: scanEntry.files,
+                  into: scanEntry.into
+                }))
+
                 origin.descriptor.ext.collector.push({
                   run: {
                     command: 'true'  // No-op
                   },
-                  scan: {
-                    dir: cachedScanPath,
-                    files: scan.files,
-                    into: scan.into
-                  }
+                  scan: scanConfigs
                 })
               }
             } else {
