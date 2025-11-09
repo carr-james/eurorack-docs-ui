@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * Universal Antora Build Tool for Eurorack Documentation
+ * Flexible Antora Build Tool with Docker
  *
- * Handles both component and unified documentation builds with automatic
- * detection of build context and smart volume mounting for local development.
+ * A simple wrapper around Docker to run Antora builds. The user controls
+ * all configuration via command-line arguments and the playbook file.
  *
  * @see https://docs.antora.org
  */
@@ -16,12 +16,12 @@ const path = require('path')
 // Parse command line arguments
 const args = process.argv.slice(2)
 const options = {
-  mode: 'prod',           // 'local' or 'prod'
-  type: 'auto',           // 'component', 'unified', or 'auto'
+  playbook: null,         // Required: playbook file to use
   cwd: process.cwd(),     // Working directory
+  mounts: [],             // Additional volume mounts (src:dest)
   clean: false,           // Clean before build
-  noCache: false,         // Skip Docker cache
   forceCollector: false,  // Force collector execution
+  dryRun: false,          // Dry run (cache check only)
   skipPull: false,        // Skip docker pull
   verbose: false          // Verbose output
 }
@@ -29,18 +29,18 @@ const options = {
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
   const arg = args[i]
-  if (arg === '--mode' && args[i + 1]) {
-    options.mode = args[++i]
-  } else if (arg === '--type' && args[i + 1]) {
-    options.type = args[++i]
+  if (arg === '--playbook' && args[i + 1]) {
+    options.playbook = args[++i]
   } else if (arg === '--cwd' && args[i + 1]) {
     options.cwd = path.resolve(process.cwd(), args[++i])
+  } else if (arg === '--mount' && args[i + 1]) {
+    options.mounts.push(args[++i])
   } else if (arg === '--clean') {
     options.clean = true
-  } else if (arg === '--no-cache') {
-    options.noCache = true
   } else if (arg === '--force-collector') {
     options.forceCollector = true
+  } else if (arg === '--dry-run') {
+    options.dryRun = true
   } else if (arg === '--skip-pull') {
     options.skipPull = true
   } else if (arg === '--verbose' || arg === '-v') {
@@ -48,16 +48,43 @@ for (let i = 0; i < args.length; i++) {
   } else if (arg === '--help' || arg === '-h') {
     showHelp()
     process.exit(0)
+  } else {
+    console.error(`Unknown option: ${arg}`)
+    console.error('Use --help for usage information')
+    process.exit(1)
   }
+}
+
+// Require playbook
+if (!options.playbook) {
+  console.error('Error: --playbook is required')
+  console.error('Usage: eurorack-build --playbook <file> [options]')
+  console.error('Use --help for more information')
+  process.exit(1)
 }
 
 // Change to working directory
 process.chdir(options.cwd)
 
-// Detect build context
-const context = detectContext(options)
+// Find git repository root
+const gitRoot = findGitRoot(options.cwd)
+if (!gitRoot) {
+  console.error('Error: Not in a git repository')
+  console.error('Antora requires a git repository for local builds')
+  process.exit(1)
+}
+
+// Build context
+const context = {
+  playbook: options.playbook,
+  gitRoot,
+  workDir: path.relative(gitRoot, options.cwd) || '.',
+  buildDir: 'build'
+}
+
 if (options.verbose) {
   console.log('Build context:', JSON.stringify(context, null, 2))
+  console.log('Options:', JSON.stringify(options, null, 2))
 }
 
 // Run build
@@ -83,104 +110,25 @@ function findGitRoot(startPath) {
 }
 
 /**
- * Detect build context based on directory structure
- */
-function detectContext(options) {
-  const cwd = process.cwd()
-
-  // Find git repository root
-  const gitRoot = findGitRoot(cwd)
-  if (!gitRoot) {
-    throw new Error('Not in a git repository. Antora requires a git repository for local builds.')
-  }
-
-  // Auto-detect type if not specified
-  let type = options.type
-  if (type === 'auto') {
-    // Unified repo has antora-playbook.yml at root
-    // Component repos have docs/ subdirectory
-    if (fs.existsSync(path.join(cwd, 'antora-playbook.yml'))) {
-      type = 'unified'
-    } else if (fs.existsSync(path.join(cwd, 'local-site.yml'))) {
-      type = 'component'
-    } else {
-      throw new Error('Cannot detect build type. Use --type component or --type unified')
-    }
-  }
-
-  // Determine playbook and paths
-  let playbook, buildDir, workDir, dockerWorkDir, componentName
-
-  if (type === 'component') {
-    playbook = options.mode === 'local' ? 'local-site.yml' : 'local-site.yml'
-    buildDir = 'build'
-    // Mount git root, but work from subdirectory if needed
-    workDir = gitRoot
-    // Relative path from git root to cwd for Docker working directory
-    dockerWorkDir = path.relative(gitRoot, cwd) || '.'
-
-    // Try to detect component name from antora.yml
-    const antoraYml = path.join(cwd, 'antora.yml')
-    if (fs.existsSync(antoraYml)) {
-      const content = fs.readFileSync(antoraYml, 'utf8')
-      const match = content.match(/^name:\s*(.+)$/m)
-      if (match) {
-        componentName = match[1].trim()
-      }
-    }
-  } else {
-    // Unified
-    playbook = options.mode === 'local' ? 'local-playbook.yml' : 'antora-playbook.yml'
-    buildDir = 'build'
-    workDir = gitRoot
-    dockerWorkDir = path.relative(gitRoot, cwd) || '.'
-  }
-
-  // Find eurorack-docs-ui path (sibling directory)
-  const uiPath = path.resolve(cwd, '..', 'eurorack-docs-ui')
-  const hasLocalUI = fs.existsSync(uiPath)
-
-  // Find component paths for unified local builds
-  const componentPaths = {}
-  if (type === 'unified' && options.mode === 'local') {
-    const cem3340Path = path.resolve(cwd, '..', 'cem3340-vco')
-    const quadVcaPath = path.resolve(cwd, '..', 'quad-vca-mixer')
-
-    if (fs.existsSync(cem3340Path)) {
-      componentPaths.cem3340 = cem3340Path
-    }
-    if (fs.existsSync(quadVcaPath)) {
-      componentPaths.quadVca = quadVcaPath
-    }
-  }
-
-  return {
-    type,
-    mode: options.mode,
-    playbook,
-    buildDir,
-    workDir,
-    dockerWorkDir,
-    componentName,
-    hasLocalUI: hasLocalUI && options.mode === 'local',
-    uiPath: hasLocalUI ? uiPath : null,
-    componentPaths
-  }
-}
-
-/**
  * Run Docker build
  */
 function runBuild(context, options) {
-  const { type, mode, playbook, buildDir, workDir, dockerWorkDir, hasLocalUI, uiPath, componentPaths, componentName } = context
+  const { playbook, gitRoot, workDir, buildDir } = context
 
   console.log('==================================')
-  console.log(`Building ${type === 'unified' ? 'Unified' : 'Component'} Documentation (${mode})`)
+  console.log('Building Antora Documentation')
   console.log('==================================')
   console.log()
+  console.log(`Playbook: ${playbook}`)
+  console.log(`Git root: ${gitRoot}`)
+  console.log(`Work dir: ${workDir}`)
+  console.log()
 
-  // Check playbook exists (in the appropriate subdirectory)
-  const playbookPath = dockerWorkDir !== '.' ? path.join(workDir, dockerWorkDir, playbook) : path.join(workDir, playbook)
+  // Check playbook exists
+  const playbookPath = workDir !== '.'
+    ? path.join(gitRoot, workDir, playbook)
+    : path.join(gitRoot, playbook)
+
   if (!fs.existsSync(playbookPath)) {
     throw new Error(`Playbook not found: ${playbookPath}`)
   }
@@ -188,11 +136,15 @@ function runBuild(context, options) {
   // Clean if requested
   if (options.clean) {
     console.log('Cleaning build artifacts...')
-    const cacheDir = path.join(workDir, '.cache')
-    const buildPath = path.join(workDir, buildDir)
+    const cachePath = workDir !== '.'
+      ? path.join(gitRoot, workDir, '.cache')
+      : path.join(gitRoot, '.cache')
+    const buildPath = workDir !== '.'
+      ? path.join(gitRoot, workDir, buildDir)
+      : path.join(gitRoot, buildDir)
 
-    if (fs.existsSync(cacheDir)) {
-      execSync(`rm -rf "${cacheDir}"`, { stdio: 'inherit' })
+    if (fs.existsSync(cachePath)) {
+      execSync(`rm -rf "${cachePath}"`, { stdio: 'inherit' })
     }
     if (fs.existsSync(buildPath)) {
       execSync(`rm -rf "${buildPath}"`, { stdio: 'inherit' })
@@ -202,31 +154,33 @@ function runBuild(context, options) {
 
   // Pull Docker image
   if (!options.skipPull) {
-    console.log('Pulling Docker container...')
+    console.log('Pulling Docker image...')
     execSync('docker pull ghcr.io/carr-james/eurorack-docker:latest', { stdio: 'inherit' })
     console.log()
   }
 
   // Build volume mounts
-  const volumes = [`"${workDir}:/work"`]
+  // Always mount git root to /work
+  const volumes = [`"${gitRoot}:/work"`]
 
-  if (hasLocalUI) {
-    volumes.push(`"${uiPath}:/eurorack-docs-ui"`)
-    console.log('Mounting local eurorack-docs-ui for development')
+  // Add user-specified mounts
+  if (options.mounts.length > 0) {
+    console.log('Additional mounts:')
+    for (const mount of options.mounts) {
+      const [src, dest] = mount.split(':')
+      if (!src || !dest) {
+        throw new Error(`Invalid mount format: ${mount} (expected src:dest)`)
+      }
+      const absoluteSrc = path.resolve(src)
+      if (!fs.existsSync(absoluteSrc)) {
+        console.warn(`Warning: Mount source does not exist: ${absoluteSrc}`)
+      }
+      volumes.push(`"${absoluteSrc}:${dest}"`)
+      console.log(`  ${absoluteSrc} → ${dest}`)
+    }
+    console.log()
   }
 
-  if (type === 'unified' && mode === 'local') {
-    if (componentPaths.cem3340) {
-      volumes.push(`"${componentPaths.cem3340}:/cem3340-vco"`)
-      console.log('Mounting local cem3340-vco')
-    }
-    if (componentPaths.quadVca) {
-      volumes.push(`"${componentPaths.quadVca}:/quad-vca-mixer"`)
-      console.log('Mounting local quad-vca-mixer')
-    }
-  }
-
-  console.log()
   console.log('Building site in Docker container...')
 
   // Build environment variables
@@ -239,44 +193,41 @@ function runBuild(context, options) {
     envVars.push('FORCE_COLLECTOR=true')
   }
 
+  if (options.dryRun) {
+    envVars.push('DRY_RUN=true')
+  }
+
   // Build docker command
   const volumeArgs = volumes.map(v => `-v ${v}`).join(' \\\n    ')
   const envArgs = envVars.map(e => `-e ${e}`).join(' \\\n    ')
 
-  // Determine working directory path for Docker (-w flag)
-  const workPath = dockerWorkDir !== '.' ? `/work/${dockerWorkDir}` : '/work'
+  // Docker working directory
+  const dockerWorkDir = workDir !== '.' ? `/work/${workDir}` : '/work'
 
   const dockerCmd = `docker run --rm \\
     ${volumeArgs} \\
-    -w ${workPath} \\
+    -w ${dockerWorkDir} \\
     ${envArgs} \\
     ghcr.io/carr-james/eurorack-docker:latest \\
     bash -c "
         set -e
 
-        echo 'Installing Antora dependencies...'
+        echo 'Installing dependencies...'
         if [ ! -d node_modules ]; then
             npm install --no-package-lock
         else
-            echo 'Antora dependencies already installed.'
+            echo 'Dependencies already installed'
         fi
 
-        echo 'Building Antora site...'
-        if npx antora ${playbook}; then
-            echo 'Antora build completed successfully'
-        else
-            echo 'ERROR: Antora build failed'
-            exit 1
-        fi
+        echo 'Running Antora...'
+        npx antora ${playbook}
 
         echo 'Fixing file ownership...'
         chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID ${buildDir} node_modules .cache 2>/dev/null || true
-        ${type === 'component' ? 'chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID /work/hardware/**/kibot-output 2>/dev/null || true' : ''}
-        ${type === 'unified' && mode === 'local' ? 'chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID /cem3340-vco/hardware/**/kibot-output 2>/dev/null || true' : ''}
-        ${type === 'unified' && mode === 'local' ? 'chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID /quad-vca-mixer/hardware/**/kibot-output 2>/dev/null || true' : ''}
     "`
 
   if (options.verbose) {
+    console.log()
     console.log('Docker command:')
     console.log(dockerCmd)
     console.log()
@@ -286,9 +237,10 @@ function runBuild(context, options) {
   execSync(dockerCmd, { stdio: 'inherit', shell: '/bin/bash' })
 
   // Check if build succeeded
-  const sitePath = dockerWorkDir !== '.'
-    ? path.join(workDir, dockerWorkDir, buildDir, 'site')
-    : path.join(workDir, buildDir, 'site')
+  const sitePath = workDir !== '.'
+    ? path.join(gitRoot, workDir, buildDir, 'site')
+    : path.join(gitRoot, buildDir, 'site')
+
   if (fs.existsSync(sitePath)) {
     console.log()
     console.log('==================================')
@@ -297,23 +249,8 @@ function runBuild(context, options) {
     console.log()
     console.log('To view the documentation:')
     console.log(`  cd ${buildDir}/site && python3 -m http.server 8000`)
-
-    if (type === 'component' && componentName) {
-      console.log(`  Then open: http://localhost:8000/${componentName}/stable/`)
-    } else if (type === 'unified') {
-      console.log('  Then open: http://localhost:8000/eurorack-docs/stable/')
-    }
+    console.log('  Then open: http://localhost:8000')
     console.log()
-
-    if (mode === 'local') {
-      console.log('NOTE: This is a local preview.')
-      if (type === 'component') {
-        console.log('For the full unified site, see: https://carr-james.github.io/eurorack-docs')
-      } else {
-        console.log('For production builds, use: npm run docs:prod')
-      }
-      console.log()
-    }
   } else {
     throw new Error('Build directory not created - build may have failed')
   }
@@ -324,49 +261,59 @@ function runBuild(context, options) {
  */
 function showHelp() {
   console.log(`
-Universal Antora Build Tool for Eurorack Documentation
+Antora Build Tool with Docker
 
-Usage: eurorack-build [options]
+A simple wrapper to run Antora in Docker.
+
+Usage: eurorack-build --playbook <file> [options]
+
+Required:
+  --playbook <file>         Playbook file to use (e.g., antora-playbook.yml)
 
 Options:
-  --mode <local|prod>       Build mode (default: prod)
-                            - local: Use local-playbook.yml, mount local UI
-                            - prod: Use production playbook, npm packages
-
-  --type <component|unified|auto>
-                            Build type (default: auto)
-                            - component: Single component docs
-                            - unified: Multi-component unified docs
-                            - auto: Detect based on directory structure
-
   --cwd <path>              Working directory (default: current directory)
 
-  --clean                   Clean build artifacts before building
+  --mount <src>:<dest>      Additional volume mount (can be used multiple times)
+                            Example: --mount ../ui:/ui --mount ../comp:/comp
 
-  --no-cache                Skip Docker cache
+  --clean                   Clean .cache and build directories before building
 
-  --force-collector         Force collector to run (skip cache)
+  --force-collector         Set FORCE_COLLECTOR=true environment variable
+
+  --dry-run                 Set DRY_RUN=true environment variable
 
   --skip-pull               Skip docker pull step
 
-  --verbose, -v             Verbose output
+  --verbose, -v             Show verbose output including docker command
 
   --help, -h                Show this help message
 
 Examples:
-  # Component repo - local development
-  npm run docs:local
+  # Basic build
+  eurorack-build --playbook antora-playbook.yml
 
-  # Component repo - production build
-  npm run docs:prod
+  # Local development with UI bundle from sibling directory
+  eurorack-build --playbook local-playbook.yml \\
+    --mount ../eurorack-docs-ui:/eurorack-docs-ui
 
-  # Unified repo - local with all components
-  npm run docs:local
+  # Unified docs with component repos mounted
+  eurorack-build --playbook local-playbook.yml \\
+    --mount ../eurorack-docs-ui:/eurorack-docs-ui \\
+    --mount ../cem3340-vco:/cem3340-vco \\
+    --mount ../quad-vca-mixer:/quad-vca-mixer
 
-  # Clean build
-  npm run docs:local -- --clean
+  # Clean build with collector cache disabled
+  eurorack-build --playbook antora-playbook.yml \\
+    --clean \\
+    --force-collector
 
-  # Force collector regeneration
-  npm run docs:local -- --force-collector
+  # Dry run to check collector cache status
+  eurorack-build --playbook antora-playbook.yml --dry-run
+
+Notes:
+  - The git repository root is always mounted to /work in the container
+  - Working directory is relative to git root
+  - Use your playbook to configure Antora behavior (not this script)
+  - Additional mounts should use absolute paths (or paths relative to cwd)
 `)
 }
