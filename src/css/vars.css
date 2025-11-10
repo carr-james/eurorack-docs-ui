@@ -14,6 +14,7 @@
   --color-copper: #f0c040;
   --color-copper-light: #ffd760;
   --color-copper-dark: #d4a930;
+  --color-copper-darker: #b8841f;
 
   /* fonts */
   --rem-base: 18; /* used to compute rem value from desired pixel value */

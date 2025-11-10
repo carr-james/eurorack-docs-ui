@@ -1,0 +1,66 @@
+/* Custom SimpleLightbox styling for dark Eurorack theme */
+
+/* Dark background overlay */
+.sl-overlay {
+  background: rgba(21, 21, 21, 0.98) !important; /* var(--color-black) with very high opacity */
+}
+
+/* Buttons with same styling as counter */
+.sl-wrapper .sl-close,
+.sl-wrapper .sl-navigation button {
+  color: #e8e8e8 !important; /* var(--color-off-white) */
+  background: rgba(21, 21, 21, 0.7) !important; /* Same as counter */
+  border: none !important; /* Remove borders */
+  border-radius: 0 !important; /* Square like Eurorack panels */
+  transition: all 0.2s ease !important;
+}
+
+.sl-wrapper .sl-close:hover,
+.sl-wrapper .sl-navigation button:hover {
+  background: rgba(21, 21, 21, 0.9) !important; /* Slightly more opaque on hover */
+  color: #f0c040 !important; /* Copper text on hover */
+}
+
+/* Counter styling */
+.sl-counter {
+  color: #e8e8e8 !important; /* var(--color-off-white) */
+  font-family: "JetBrains Mono", monospace !important;
+  background: rgba(21, 21, 21, 0.7) !important;
+  padding: 0.5rem 1rem !important;
+  border-radius: 0 !important;
+  border: none !important; /* Remove border */
+}
+
+/* Caption styling */
+.sl-caption {
+  color: #e8e8e8 !important; /* var(--color-off-white) */
+  background: rgba(21, 21, 21, 0.9) !important;
+  font-family: "JetBrains Mono", monospace !important;
+  padding: 1rem !important;
+  border-top: 2px solid #f0c040 !important; /* var(--color-copper) */
+}
+
+/* Spinner/loading indicator */
+.sl-spinner {
+  border-color: #f0c040 transparent transparent transparent !important; /* var(--color-copper) */
+}
+
+/* Image container */
+.sl-image img {
+  border: none !important; /* Remove border */
+}
+
+/* Close button - make it more visible */
+.sl-wrapper .sl-close {
+  font-size: 3rem !important;
+  line-height: 3rem !important;
+  width: 3rem !important;
+  height: 3rem !important;
+}
+
+/* Navigation arrows */
+.sl-wrapper .sl-navigation button {
+  font-size: 2rem !important;
+  width: 3rem !important;
+  height: 4rem !important;
+}

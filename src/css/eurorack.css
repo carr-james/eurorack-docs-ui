@@ -127,6 +127,18 @@ footer {
   font-weight: var(--body-font-weight-bold);
 }
 
+/* Links in white-background headings - use darker copper for contrast */
+.doc .sect1 > h2 a:not(.anchor),
+.doc .sect2 > h3 a:not(.anchor) {
+  color: var(--color-copper-darker);
+}
+
+.doc .sect1 > h2 a:not(.anchor):hover,
+.doc .sect2 > h3 a:not(.anchor):hover {
+  color: var(--color-black);
+  border-bottom-color: var(--color-copper-darker);
+}
+
 .doc .sect1 > h2::after {
   content: "";
   position: absolute;
