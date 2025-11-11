@@ -23,7 +23,8 @@ const options = {
   forceCollector: false,  // Force collector execution
   dryRun: false,          // Dry run (cache check only)
   skipPull: false,        // Skip docker pull
-  verbose: false          // Verbose output
+  verbose: false,         // Verbose output
+  dockerImage: 'ghcr.io/carr-james/eurorack-docker:latest'  // Docker image to use
 }
 
 // Parse arguments
@@ -43,6 +44,8 @@ for (let i = 0; i < args.length; i++) {
     options.dryRun = true
   } else if (arg === '--skip-pull') {
     options.skipPull = true
+  } else if (arg === '--docker-image' && args[i + 1]) {
+    options.dockerImage = args[++i]
   } else if (arg === '--verbose' || arg === '-v') {
     options.verbose = true
   } else if (arg === '--help' || arg === '-h') {
@@ -154,8 +157,8 @@ function runBuild(context, options) {
 
   // Pull Docker image
   if (!options.skipPull) {
-    console.log('Pulling Docker image...')
-    execSync('docker pull ghcr.io/carr-james/eurorack-docker:latest', { stdio: 'inherit' })
+    console.log(`Pulling Docker image: ${options.dockerImage}`)
+    execSync(`docker pull ${options.dockerImage}`, { stdio: 'inherit' })
     console.log()
   }
 
@@ -208,7 +211,7 @@ function runBuild(context, options) {
     ${volumeArgs} \\
     -w ${dockerWorkDir} \\
     ${envArgs} \\
-    ghcr.io/carr-james/eurorack-docker:latest \\
+    ${options.dockerImage} \\
     bash -c "
         set -e
 
@@ -283,6 +286,8 @@ Options:
   --dry-run                 Set DRY_RUN=true environment variable
 
   --skip-pull               Skip docker pull step
+
+  --docker-image <image>    Docker image to use (default: ghcr.io/carr-james/eurorack-docker:latest)
 
   --verbose, -v             Show verbose output including docker command
 
