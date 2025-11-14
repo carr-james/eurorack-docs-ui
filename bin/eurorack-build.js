@@ -215,18 +215,29 @@ function runBuild(context, options) {
     bash -c "
         set -e
 
-        echo 'Installing dependencies...'
+        echo 'Installing dependencies as root...'
         if [ ! -d node_modules ]; then
             npm install --no-package-lock
         else
             echo 'Dependencies already installed'
         fi
 
-        echo 'Running Antora...'
-        npx antora ${playbook}
+        echo 'Switching to user \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID...'
 
-        echo 'Fixing file ownership...'
-        chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID ${buildDir} node_modules .cache 2>/dev/null || true
+        # Create a user with the same UID/GID as the host user if it doesn't exist
+        # This ensures file ownership matches the host
+        if ! getent passwd \\$LOCAL_USER_ID >/dev/null 2>&1; then
+            groupadd -g \\$LOCAL_GROUP_ID builduser 2>/dev/null || true
+            useradd -u \\$LOCAL_USER_ID -g \\$LOCAL_GROUP_ID -m -s /bin/bash builduser 2>/dev/null || true
+        fi
+
+        echo 'Running Antora as host user...'
+        su-exec \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID npx antora ${playbook} || \\
+        gosu \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID npx antora ${playbook} || \\
+        runuser -u builduser -- npx antora ${playbook}
+
+        echo 'Fixing ownership of installed dependencies...'
+        chown -R \\$LOCAL_USER_ID:\\$LOCAL_GROUP_ID node_modules .cache 2>/dev/null || true
     "`
 
   if (options.verbose) {
