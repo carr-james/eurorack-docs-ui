@@ -200,6 +200,11 @@ function runBuild(context, options) {
     envVars.push('DRY_RUN=true')
   }
 
+  // Pass through BLENDER_SAMPLES if set in environment
+  if (process.env.BLENDER_SAMPLES) {
+    envVars.push(`BLENDER_SAMPLES=${process.env.BLENDER_SAMPLES}`)
+  }
+
   // Build docker command
   const volumeArgs = volumes.map(v => `-v ${v}`).join(' \\\n    ')
   const envArgs = envVars.map(e => `-e ${e}`).join(' \\\n    ')
