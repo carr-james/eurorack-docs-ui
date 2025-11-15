@@ -191,23 +191,8 @@ module.exports.register = function () {
                 logger.debug(`Fetching remote refs for ${remote} from ${origin.url}`)
                 await git.fetch({ ...repo, http, url: origin.url, remote, singleBranch: false, tags: false })
 
-                // Debug: List what refs exist after fetch
-                logger.debug(`Local branches: ${(await git.listBranches(repo)).join(', ')}`)
-                logger.debug(`Remote branches: ${(await git.listBranches({ ...repo, remote })).join(', ')}`)
-
-                // Match prepareWorktree logic for existing worktrees
-                let head
-                if (ref.startsWith('refs/heads/')) {
-                  head = `ref: ${ref}`
-                  const branchName = ref.slice(11)
-                  if (!(await git.listBranches(repo)).includes(branchName)) {
-                    await git.branch({ ...repo, ref: branchName, object: `refs/remotes/${remote}/${branchName}`, force: true })
-                  }
-                } else {
-                  head = await git.resolveRef(repo)
-                }
-
-                await git.checkout({ ...repo, force: true, noUpdateHead: true, track: false })
+                // Checkout the fetched ref directly (branch already exists)
+                await git.checkout({ ...repo, ref, force: true, noUpdateHead: true, track: false })
               } catch (err) {
                 logger.warn(`Failed to update worktree for ${componentName}/${key}: ${err.message}`)
               }
