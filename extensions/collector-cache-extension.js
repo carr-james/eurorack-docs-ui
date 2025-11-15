@@ -27,12 +27,15 @@ module.exports.register = function () {
   /**
    * Main event: Process collector-cache configuration before collector runs
    */
-  this.once('contentAggregated', ({ contentAggregate, playbook }) => {
+  this.once('contentAggregated', async ({ contentAggregate, playbook }) => {
     const dryRun = process.env.DRY_RUN === 'true'
     logger.info('Processing collector-cache configuration')
     if (dryRun) {
       logger.info('DRY RUN MODE - will exit after cache check')
     }
+
+    // Get git module for updating worktrees
+    const git = this.require('@antora/content-aggregator/git')
 
     for (const { name: componentName, origins } of contentAggregate) {
       for (const origin of origins) {
@@ -167,6 +170,18 @@ module.exports.register = function () {
                 contentHash: null
               })
               continue
+            }
+
+            // Update worktree to current commit before checking files
+            if (origin.gitdir && origin.refname && origin.reftype) {
+              try {
+                const reftype = origin.reftype === 'branch' ? 'heads' : origin.reftype + 's'
+                const ref = `refs/${reftype}/${origin.refname}`
+                logger.debug(`Updating worktree to ${origin.reftype}:${origin.refname}`)
+                await git.checkout({ dir: worktree, gitdir: origin.gitdir, ref, force: true })
+              } catch (err) {
+                logger.warn(`Failed to update worktree for ${componentName}/${key}: ${err.message}`)
+              }
             }
 
             // Compute source file hashes
