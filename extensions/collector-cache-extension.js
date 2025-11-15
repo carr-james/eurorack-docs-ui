@@ -36,6 +36,7 @@ module.exports.register = function () {
 
     // Get git module for updating worktrees
     const git = this.require('@antora/content-aggregator/git')
+    const http = require('isomorphic-git/http/node')
 
     for (const { name: componentName, origins } of contentAggregate) {
       for (const origin of origins) {
@@ -188,7 +189,7 @@ module.exports.register = function () {
 
                 // Fetch remote refs first to get latest commits
                 logger.debug(`Fetching remote refs for ${remote}`)
-                await git.fetch({ ...repo, url: origin.url, remote, singleBranch: false, tags: false })
+                await git.fetch({ ...repo, http, url: origin.url, remote, singleBranch: false, tags: false })
 
                 // Match prepareWorktree logic for existing worktrees
                 let head
