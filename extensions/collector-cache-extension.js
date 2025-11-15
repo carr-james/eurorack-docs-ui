@@ -188,8 +188,12 @@ module.exports.register = function () {
                 const repo = { fs, cache, dir: worktree, gitdir: origin.gitdir, ref, remote, bare }
 
                 // Fetch remote refs first to get latest commits
-                logger.debug(`Fetching remote refs for ${remote}`)
+                logger.debug(`Fetching remote refs for ${remote} from ${origin.url}`)
                 await git.fetch({ ...repo, http, url: origin.url, remote, singleBranch: false, tags: false })
+
+                // Debug: List what refs exist after fetch
+                logger.debug(`Local branches: ${(await git.listBranches(repo)).join(', ')}`)
+                logger.debug(`Remote branches: ${(await git.listBranches({ ...repo, remote })).join(', ')}`)
 
                 // Match prepareWorktree logic for existing worktrees
                 let head
