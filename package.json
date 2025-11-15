@@ -1,6 +1,6 @@
 {
   "name": "@carr-james/eurorack-docs-ui",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "Custom dark UI bundle for Eurorack hardware documentation with black panel aesthetic",
   "homepage": "https://github.com/carr-james/eurorack-docs-ui",
   "license": "MPL-2.0",

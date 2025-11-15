@@ -175,10 +175,30 @@ module.exports.register = function () {
             // Update worktree to current commit before checking files
             if (origin.gitdir && origin.refname && origin.reftype) {
               try {
-                const reftype = origin.reftype === 'branch' ? 'heads' : origin.reftype + 's'
-                const ref = `refs/${reftype}/${origin.refname}`
+                // Match collector extension's ref construction (line 128)
+                const ref = `refs/${origin.reftype === 'branch' ? 'head' : origin.reftype}s/${origin.refname}`
+                const remote = origin.remote || 'origin'
+                const bare = false // worktree exists from cache
+                const cache = {} // Empty cache object
+
                 logger.debug(`Updating worktree to ${origin.reftype}:${origin.refname}`)
-                await git.checkout({ dir: worktree, gitdir: origin.gitdir, ref, force: true })
+
+                // Build repo object matching collector extension's prepareWorktree call (line 130)
+                const repo = { fs, cache, dir: worktree, gitdir: origin.gitdir, ref, remote, bare }
+
+                // Match prepareWorktree logic for existing worktrees
+                let head
+                if (ref.startsWith('refs/heads/')) {
+                  head = `ref: ${ref}`
+                  const branchName = ref.slice(11)
+                  if (!(await git.listBranches(repo)).includes(branchName)) {
+                    await git.branch({ ...repo, ref: branchName, object: `refs/remotes/${remote}/${branchName}`, force: true })
+                  }
+                } else {
+                  head = await git.resolveRef(repo)
+                }
+
+                await git.checkout({ ...repo, force: true, noUpdateHead: true, track: false })
               } catch (err) {
                 logger.warn(`Failed to update worktree for ${componentName}/${key}: ${err.message}`)
               }
