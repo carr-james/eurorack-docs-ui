@@ -170,7 +170,7 @@ module.exports.register = function () {
             }
 
             // Compute source file hashes
-            const sourceHashes = computeHashes(worktree, sources)
+            const sourceHashes = computeHashes(worktree, sources, logger, componentName, key)
 
             if (sourceHashes === null) {
               logger.debug(`Source files not found for ${componentName}/${key} - cache MISS`)
@@ -297,7 +297,7 @@ module.exports.register = function () {
         let contentHash = entry.contentHash
 
         if (!sourceHashes) {
-          sourceHashes = computeHashes(worktree, entry.sources)
+          sourceHashes = computeHashes(worktree, entry.sources, logger, entry.componentName, entry.key)
           if (!sourceHashes) {
             logger.warn(`Source files still not found for ${entry.componentName}/${entry.key}`)
             continue
@@ -340,19 +340,39 @@ module.exports.register = function () {
 /**
  * Compute SHA-256 hashes for source files
  */
-function computeHashes (worktree, sources) {
+function computeHashes (worktree, sources, logger, componentName, key) {
   const hashes = {}
+
+  if (logger && componentName && key) {
+    logger.debug(`Checking source files for ${componentName}/${key} in worktree: ${worktree}`)
+  }
 
   for (const source of sources) {
     const filePath = path.join(worktree, source)
 
     if (!fs.existsSync(filePath)) {
+      if (logger && componentName && key) {
+        logger.debug(`  ✗ Missing: ${source}`)
+        // List what's actually in the worktree
+        try {
+          const worktreeContents = fs.readdirSync(worktree, { withFileTypes: true })
+          const files = worktreeContents.filter(e => e.isFile()).map(e => e.name)
+          const dirs = worktreeContents.filter(e => e.isDirectory()).map(e => e.name + '/')
+          logger.debug(`  Worktree contains: ${[...dirs, ...files].join(', ') || '(empty)'}`)
+        } catch (err) {
+          logger.debug(`  Failed to list worktree contents: ${err.message}`)
+        }
+      }
       return null
     }
 
     const content = fs.readFileSync(filePath)
     const hash = crypto.createHash('sha256').update(content).digest('hex')
     hashes[source] = hash
+
+    if (logger && componentName && key) {
+      logger.debug(`  ✓ Found: ${source} (${hash.substring(0, 12)}...)`)
+    }
   }
 
   return hashes
