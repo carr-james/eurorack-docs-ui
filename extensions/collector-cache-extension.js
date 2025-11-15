@@ -186,6 +186,10 @@ module.exports.register = function () {
                 // Build repo object matching collector extension's prepareWorktree call (line 130)
                 const repo = { fs, cache, dir: worktree, gitdir: origin.gitdir, ref, remote, bare }
 
+                // Fetch remote refs first to get latest commits
+                logger.debug(`Fetching remote refs for ${remote}`)
+                await git.fetch({ ...repo, url: origin.url, remote, singleBranch: false, tags: false })
+
                 // Match prepareWorktree logic for existing worktrees
                 let head
                 if (ref.startsWith('refs/heads/')) {
