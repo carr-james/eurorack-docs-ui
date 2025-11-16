@@ -115,6 +115,7 @@ module.exports.register = function () {
                 componentHashDir,
                 key: run.key,
                 sources: run.sources,
+                sourceCommands: run.sourcecommands || run.sourceCommands,  // Store for later resolution
                 collectorCacheDir,
                 worktreePrefix,
                 outputDir: cachedir,
@@ -142,6 +143,20 @@ module.exports.register = function () {
 
         logger.debug(`Processing ${entries.length} entries for ${componentName}`)
 
+        // Build entries map for dependency resolution
+        const entriesMap = new Map()
+        for (const entry of entries) {
+          const { run } = entry
+          if (run && run.key) {
+            entriesMap.set(run.key, {
+              key: run.key,
+              sources: run.sources || [],
+              sourceCommands: run.sourcecommands || run.sourceCommands || [],
+              dependsOn: run.dependson || run.dependsOn || []
+            })
+          }
+        }
+
         for (const entry of entries) {
           const { run, scan } = entry
 
@@ -165,6 +180,7 @@ module.exports.register = function () {
                 componentHashDir,
                 key,
                 sources,
+                sourceCommands: run.sourcecommands || run.sourceCommands,
                 worktree,
                 outputDir,
                 sourceHashes: null,
@@ -240,8 +256,16 @@ module.exports.register = function () {
               logger.debug(`Submodule initialization error: ${err.message}`)
             }
 
-            // Resolve dynamic sources from sourceCommands if specified
-            const resolvedSources = await resolveSources(worktree, sources, run.sourcecommands || run.sourceCommands, logger, componentName, key)
+            // Resolve sources from dependencies first
+            const dependsOn = run.dependson || run.dependsOn || []
+            const depSources = resolveDependencySources(entriesMap, dependsOn, new Set([key]), logger, componentName, key)
+
+            // Combine entry's own sources with dependency sources
+            const allSources = [...sources, ...depSources.sources]
+            const allSourceCommands = [...(run.sourcecommands || run.sourceCommands || []), ...depSources.sourceCommands]
+
+            // Resolve dynamic sources from sourceCommands (including dependencies)
+            const resolvedSources = await resolveSources(worktree, allSources, allSourceCommands, logger, componentName, key)
 
             // Compute source file hashes
             const sourceHashes = computeHashes(worktree, resolvedSources, logger, componentName, key)
@@ -254,6 +278,7 @@ module.exports.register = function () {
                 componentHashDir,
                 key,
                 sources,
+                sourceCommands: run.sourcecommands || run.sourceCommands,
                 worktree,
                 outputDir,
                 sourceHashes: null,
@@ -283,6 +308,14 @@ module.exports.register = function () {
             if (shouldSkip) {
               logger.info(`Cache HIT for ${componentName}/${key} (content: ${contentHash.substring(0, 12)}...)`)
 
+              // Restore files from cache to worktree if specified
+              const restorePatterns = run.restoretoworktree || run.restoreToWorktree
+              if (restorePatterns && Array.isArray(restorePatterns) && restorePatterns.length > 0) {
+                const cacheOutputPath = path.join(playbook.dir, cacheDir, 'outputs', pointer.outputDir, outputDir)
+                const worktreeOutputPath = path.join(worktree, outputDir)
+                restoreFilesToWorktree(cacheOutputPath, worktreeOutputPath, restorePatterns, logger, componentName, key)
+              }
+
               // Scan from cached outputs
               if (scan) {
                 // Handle scan as array or single object
@@ -308,12 +341,13 @@ module.exports.register = function () {
               // Run collector
               origin.descriptor.ext.collector.push({ run, scan })
 
-              // Track for cache update
+              // Track for cache update (store resolved sources with dependencies)
               cacheEntries.push({
                 componentName,
                 componentHashDir,
                 key,
-                sources,
+                sources: allSources,  // Store combined sources (incl. dependencies)
+                sourceCommands: allSourceCommands,  // Store combined sourceCommands (incl. dependencies)
                 worktree,
                 outputDir,
                 sourceHashes,
@@ -371,7 +405,10 @@ module.exports.register = function () {
         let contentHash = entry.contentHash
 
         if (!sourceHashes) {
-          sourceHashes = computeHashes(worktree, entry.sources, logger, entry.componentName, entry.key)
+          // Resolve sources (including dynamic sources from sourceCommands)
+          const resolvedSources = await resolveSources(worktree, entry.sources, entry.sourceCommands, logger, entry.componentName, entry.key)
+
+          sourceHashes = computeHashes(worktree, resolvedSources, logger, entry.componentName, entry.key)
           if (!sourceHashes) {
             logger.warn(`Source files still not found for ${entry.componentName}/${entry.key}`)
             continue
@@ -466,6 +503,75 @@ async function resolveSources (worktree, staticSources, sourceCommands, logger, 
   logger.debug(`Total sources for ${componentName}/${key}: ${resolvedSources.length}`)
 
   return resolvedSources
+}
+
+/**
+ * Resolve sources from dependencies recursively
+ *
+ * @param {object} entriesMap - Map of key -> entry config for looking up dependencies
+ * @param {string[]} dependsOn - Array of dependency keys
+ * @param {Set} visited - Set of visited keys to detect circular dependencies
+ * @param {object} logger - Logger instance
+ * @param {string} componentName - Component name for logging
+ * @param {string} key - Current entry key for logging
+ * @returns {object} Object with sources and sourceCommands arrays from all dependencies
+ */
+function resolveDependencySources (entriesMap, dependsOn, visited, logger, componentName, key) {
+  const allSources = []
+  const allSourceCommands = []
+
+  if (!dependsOn || !Array.isArray(dependsOn) || dependsOn.length === 0) {
+    return { sources: allSources, sourceCommands: allSourceCommands }
+  }
+
+  logger.debug(`Resolving dependencies for ${componentName}/${key}: ${dependsOn.join(', ')}`)
+
+  for (const depKey of dependsOn) {
+    // Check for circular dependency
+    if (visited.has(depKey)) {
+      logger.warn(`Circular dependency detected: ${key} -> ${depKey}`)
+      continue
+    }
+
+    // Find the dependency entry
+    const depEntry = entriesMap.get(depKey)
+    if (!depEntry) {
+      logger.warn(`Dependency not found: ${depKey} (required by ${key})`)
+      continue
+    }
+
+    // Mark as visited
+    const newVisited = new Set(visited)
+    newVisited.add(depKey)
+
+    // Add dependency's sources
+    if (depEntry.sources) {
+      allSources.push(...depEntry.sources)
+    }
+
+    // Add dependency's sourceCommands
+    if (depEntry.sourceCommands) {
+      allSourceCommands.push(...depEntry.sourceCommands)
+    }
+
+    // Recursively resolve the dependency's dependencies
+    if (depEntry.dependsOn && depEntry.dependsOn.length > 0) {
+      const recursive = resolveDependencySources(
+        entriesMap,
+        depEntry.dependsOn,
+        newVisited,
+        logger,
+        componentName,
+        depKey
+      )
+      allSources.push(...recursive.sources)
+      allSourceCommands.push(...recursive.sourceCommands)
+    }
+  }
+
+  logger.debug(`Resolved ${allSources.length} sources and ${allSourceCommands.length} sourceCommands from dependencies`)
+
+  return { sources: allSources, sourceCommands: allSourceCommands }
 }
 
 /**
@@ -616,4 +722,106 @@ function copyDirectory (source, destination, logger) {
   }
 
   logger.debug(`Copied directory from ${source} to ${destination}`)
+}
+
+/**
+ * Copy files matching glob patterns from cache to worktree
+ *
+ * @param {string} cacheOutputDir - Source directory in cache
+ * @param {string} worktreeOutputDir - Destination directory in worktree
+ * @param {string[]} patterns - Array of glob patterns to match
+ * @param {object} logger - Logger instance
+ * @param {string} componentName - Component name for logging
+ * @param {string} key - Entry key for logging
+ */
+function restoreFilesToWorktree (cacheOutputDir, worktreeOutputDir, patterns, logger, componentName, key) {
+  if (!patterns || !Array.isArray(patterns) || patterns.length === 0) {
+    return
+  }
+
+  logger.debug(`Restoring files to worktree for ${componentName}/${key}`)
+
+  // Find all files matching patterns
+  const filesToCopy = []
+
+  for (const pattern of patterns) {
+    const matches = findFilesMatchingPattern(cacheOutputDir, pattern)
+    logger.debug(`  Pattern "${pattern}" matched ${matches.length} file(s)`)
+    filesToCopy.push(...matches)
+  }
+
+  // Copy files to worktree
+  for (const relativePath of filesToCopy) {
+    const sourcePath = path.join(cacheOutputDir, relativePath)
+    const destPath = path.join(worktreeOutputDir, relativePath)
+
+    // Ensure destination directory exists
+    const destDir = path.dirname(destPath)
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true })
+    }
+
+    // Copy file
+    fs.copyFileSync(sourcePath, destPath)
+    logger.debug(`  Restored: ${relativePath}`)
+  }
+
+  logger.info(`Restored ${filesToCopy.length} file(s) to worktree for ${componentName}/${key}`)
+}
+
+/**
+ * Find files matching a glob pattern
+ *
+ * @param {string} dir - Directory to search
+ * @param {string} pattern - Glob pattern (supports ** and *)
+ * @returns {string[]} Array of relative paths matching the pattern
+ */
+function findFilesMatchingPattern (dir, pattern) {
+  const results = []
+
+  // Convert glob pattern to regex
+  const regex = globToRegex(pattern)
+
+  function search (currentDir, relativePath = '') {
+    if (!fs.existsSync(currentDir)) {
+      return
+    }
+
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const entryRelPath = relativePath ? path.join(relativePath, entry.name) : entry.name
+
+      if (entry.isDirectory()) {
+        search(path.join(currentDir, entry.name), entryRelPath)
+      } else if (entry.isFile()) {
+        // Normalize path separators for matching
+        const normalizedPath = entryRelPath.replace(/\\/g, '/')
+        if (regex.test(normalizedPath)) {
+          results.push(entryRelPath)
+        }
+      }
+    }
+  }
+
+  search(dir)
+  return results
+}
+
+/**
+ * Convert glob pattern to RegExp
+ *
+ * @param {string} pattern - Glob pattern
+ * @returns {RegExp} Regular expression matching the pattern
+ */
+function globToRegex (pattern) {
+  // Escape special regex characters except * and ?
+  let regexStr = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '__DOUBLESTAR__')
+    .replace(/\*/g, '[^/]*')
+    .replace(/__DOUBLESTAR__/g, '.*')
+    .replace(/\?/g, '.')
+
+  return new RegExp(`^${regexStr}$`)
 }
