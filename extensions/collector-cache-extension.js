@@ -173,8 +173,8 @@ module.exports.register = function () {
               continue
             }
 
-            // Update worktree to current commit before checking files
-            if (origin.gitdir && origin.refname && origin.reftype) {
+            // Update worktree to current commit before checking files (remote builds only)
+            if (origin.gitdir && origin.refname && origin.reftype && origin.url) {
               try {
                 // Match collector extension's ref construction (line 128)
                 const ref = `refs/${origin.reftype === 'branch' ? 'head' : origin.reftype}s/${origin.refname}`
@@ -212,6 +212,32 @@ module.exports.register = function () {
               } catch (err) {
                 logger.warn(`Failed to update worktree for ${componentName}/${key}: ${err.message}`)
               }
+            }
+
+            // Initialize submodules (works for both local and remote builds)
+            try {
+              logger.debug(`Initializing submodules in worktree`)
+              const { spawn } = require('child_process')
+              await new Promise((resolve, reject) => {
+                const proc = spawn('git', ['submodule', 'update', '--init', '--recursive'], { cwd: worktree })
+                let stderr = ''
+                proc.stderr.on('data', (data) => { stderr += data })
+                proc.on('close', (code) => {
+                  if (code === 0) {
+                    logger.debug(`Submodules initialized successfully`)
+                    resolve()
+                  } else {
+                    logger.debug(`git submodule exited with code ${code}: ${stderr}`)
+                    resolve() // Don't fail - repo might not have submodules
+                  }
+                })
+                proc.on('error', (err) => {
+                  logger.debug(`Failed to run git submodule: ${err.message}`)
+                  resolve() // Don't fail - git might not be available
+                })
+              })
+            } catch (err) {
+              logger.debug(`Submodule initialization error: ${err.message}`)
             }
 
             // Compute source file hashes
