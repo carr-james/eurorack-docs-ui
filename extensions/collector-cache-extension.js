@@ -240,8 +240,11 @@ module.exports.register = function () {
               logger.debug(`Submodule initialization error: ${err.message}`)
             }
 
+            // Resolve dynamic sources from sourceCommands if specified
+            const resolvedSources = await resolveSources(worktree, sources, run.sourcecommands || run.sourceCommands, logger, componentName, key)
+
             // Compute source file hashes
-            const sourceHashes = computeHashes(worktree, sources, logger, componentName, key)
+            const sourceHashes = computeHashes(worktree, resolvedSources, logger, componentName, key)
 
             if (sourceHashes === null) {
               logger.debug(`Source files not found for ${componentName}/${key} - cache MISS`)
@@ -406,6 +409,63 @@ module.exports.register = function () {
       }
     }
   })
+}
+
+/**
+ * Resolve source files by running sourceCommands and combining with static sources
+ */
+async function resolveSources (worktree, staticSources, sourceCommands, logger, componentName, key) {
+  const sourcesSet = new Set(staticSources)
+
+  // If no sourceCommands, just return static sources
+  if (!sourceCommands || !Array.isArray(sourceCommands) || sourceCommands.length === 0) {
+    return Array.from(sourcesSet)
+  }
+
+  logger.debug(`Resolving dynamic sources for ${componentName}/${key}`)
+
+  const { spawn } = require('child_process')
+
+  for (const command of sourceCommands) {
+    try {
+      logger.debug(`  Running: ${command}`)
+
+      const output = await new Promise((resolve, reject) => {
+        const proc = spawn('sh', ['-c', command], { cwd: worktree })
+        let stdout = ''
+        let stderr = ''
+
+        proc.stdout.on('data', (data) => { stdout += data })
+        proc.stderr.on('data', (data) => { stderr += data })
+
+        proc.on('close', (code) => {
+          if (code === 0) {
+            resolve(stdout)
+          } else {
+            reject(new Error(`Command exited with code ${code}: ${stderr}`))
+          }
+        })
+
+        proc.on('error', (err) => {
+          reject(err)
+        })
+      })
+
+      // Parse output (newline-separated paths)
+      const paths = output.trim().split('\n').filter(line => line.trim().length > 0)
+
+      logger.debug(`  Found ${paths.length} source(s)`)
+      paths.forEach(p => sourcesSet.add(p.trim()))
+
+    } catch (err) {
+      logger.warn(`Failed to run sourceCommand "${command}" for ${componentName}/${key}: ${err.message}`)
+    }
+  }
+
+  const resolvedSources = Array.from(sourcesSet)
+  logger.debug(`Total sources for ${componentName}/${key}: ${resolvedSources.length}`)
+
+  return resolvedSources
 }
 
 /**
