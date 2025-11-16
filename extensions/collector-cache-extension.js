@@ -187,12 +187,28 @@ module.exports.register = function () {
                 // Build repo object matching collector extension's prepareWorktree call (line 130)
                 const repo = { fs, cache, dir: worktree, gitdir: origin.gitdir, ref, remote, bare }
 
+                // Delete remote from repo before git operations (prepareWorktree line 236)
+                delete repo.remote
+
                 // Fetch remote refs first to get latest commits
                 logger.debug(`Fetching remote refs for ${remote} from ${origin.url}`)
                 await git.fetch({ ...repo, http, url: origin.url, remote, singleBranch: false, tags: false })
 
-                // Checkout the fetched ref directly (branch already exists)
-                await git.checkout({ ...repo, ref, force: true, noUpdateHead: true, track: false })
+                // Create/update local branch to point to remote tracking branch (prepareWorktree line 255-260)
+                if (ref.startsWith('refs/heads/')) {
+                  const branchName = ref.slice(11)
+                  const branches = await git.listBranches(repo)
+                  if (bare || !branches.includes(branchName)) {
+                    logger.debug(`Creating local branch ${branchName} -> refs/remotes/${remote}/${branchName}`)
+                    await git.branch({ ...repo, ref: branchName, object: `refs/remotes/${remote}/${branchName}`, force: true })
+                  } else {
+                    logger.debug(`Updating local branch ${branchName} -> refs/remotes/${remote}/${branchName}`)
+                    await git.branch({ ...repo, ref: branchName, object: `refs/remotes/${remote}/${branchName}`, force: true })
+                  }
+                }
+
+                // Checkout to update worktree files (prepareWorktree line 264)
+                await git.checkout({ ...repo, force: true, noUpdateHead: true, track: false })
               } catch (err) {
                 logger.warn(`Failed to update worktree for ${componentName}/${key}: ${err.message}`)
               }
