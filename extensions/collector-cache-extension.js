@@ -372,7 +372,7 @@ module.exports.register = function () {
   /**
    * After build: Update cache with new outputs
    */
-  this.on('beforePublish', ({ playbook }) => {
+  this.on('beforePublish', async ({ playbook }) => {
     logger.info(`Updating cache for ${cacheEntries.length} entries`)
 
     const cacheDir = DEFAULT_CACHE_DIR
