@@ -1,0 +1,341 @@
+= Getting Started
+
+== Introduction
+
+This guide will help you prepare for building your CEM3340 VCO module. Before starting assembly, carefully review the prerequisites and component requirements below to ensure you have everything needed for a successful build.
+
+== Prerequisites
+
+=== Tools Required
+
+* Soldering iron and solder
+* Wire cutters or flush-cut snips
+* Small flat-head screwdriver (for trimmer pot calibration)
+* Multimeter (for testing and calibration)
+* Oscilloscope or audio interface with oscilloscope software (e.g., free Zeitnitz Scope program) for VCO tuning
+
+=== Components
+
+==== Oscillator Chip
+
+The original Kassutronics VCO3340 was built and tested using the AS3340 oscillator chip. This build uses the CEM3340, which works perfectly. Other variants (AS3340, V3340, etc.) should work without modifications.
+
+==== Capacitors
+
+*Timing Capacitor (C1):* Must be NP0 or C0G ceramic for temperature stability.
+
+*Electrolytic Capacitors (C9, C10, C13):* Use low-profile versions (max height 11mm, lower is better) to ensure adequate clearance between stacked boards. Verify clearance with your chosen pin headers before soldering.
+
+*Bypass Capacitors (10nF and 100nF):* Specified as X7R ceramic. NP0/C0G or film types are acceptable alternatives, but must have 2.5mm or 2.54mm pin spacing.
+
+==== Resistors
+
+All resistors are 1/4W metal film, 1% tolerance. 1/8W resistors can be substituted without issues.
+
+*Matched Pair (R19 and R23):* For optimal V/Oct tracking, match these resistors to within 0.1kΩ of each other. Test multiple resistors and select the best-matched pair. The absolute value matters less than how closely they match each other.
+
+==== Other Components
+
+*Sync Switch:* Sub-miniature SPDT switch (available from suppliers like Thonk).
+
+*Sine Shaping JFET:* MMBFJ201 in SOT-23 package.
+
+== Bill of Materials
+
+=== Control Board
+
+[cols="2,0,3,0,3", options="header"]
+|===
+| Designator
+| Qty
+| Value
+| Note
+| Reference Part
+
+| C6, C8
+| 2
+| 10n [link:https://www.mouser.co.uk/datasheet/3/508/1/KEM_C1050_GOLDMAX_X7R.pdf[DS]]
+| <<control-board-note-1,1>>
+| C322C103K1R5TA
+
+| J1, J2, J3, J4, J5, J6, J7, J8, J12
+| 9
+| ~ [link:https://www.thonk.co.uk/wp-content/uploads/2018/07/Thonkiconn_Jack_Datasheet-new.jpg[DS]]
+|
+| Thonkiconn
+
+| J14, J16
+| 2
+| ~
+|
+| 1x4 pin header
+
+| J18, J20
+| 2
+| ~
+|
+| 1x3 pin header
+
+| R3, R14, R26, R38
+| 4
+| 1k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1001F
+
+| R11
+| 1
+| 47k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC4702F
+
+| R19, R23, R33
+| 3
+| 100k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+| <<control-board-note-2,2>>
+| MF1/4DC1003F
+
+| R39
+| 1
+| 1.5M [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1504F
+
+| RV3
+| 1
+| 10k [link:https://www.mouser.com/catalog/specsheets/alpha%20taiwan_08192019_RD901F-40-15R1-B(resistance%20value)-00DL1%20SPEC.pdf[DS]]
+| <<control-board-note-3,3>>
+| RD901F-40-15R1-B10K
+
+| RV4, RV5
+| 2
+| 100k [link:https://www.mouser.com/catalog/specsheets/alpha%20taiwan_08192019_RD901F-40-15R1-B(resistance%20value)-00DL1%20SPEC.pdf[DS]]
+| <<control-board-note-3,3>>
+| RD901F-40-15R1-B100K
+
+| S1
+| 1
+| TS-01 [link:https://www.thonk.co.uk/wp-content/uploads/2017/05/DW1-SPDT-ON-ON-2MS1T1B1M2QES.pdf[DS]]
+| <<control-board-note-4,4>>
+| 2MS1T1B1M2QES-5
+
+|===
+
+// Note footnotes
+[[control-board-note-1]]1. X7R ceramic, 2.5mm pitch +
+[[control-board-note-2]]2. Matched to 0.1% (within 100 ohms) +
+[[control-board-note-3]]3. Alpha 9mm vertical, metal shaft +
+[[control-board-note-4]]4. Sub-miniature ON-ON SPDT +
+
+=== Main Board
+
+[cols="2,0,3,0,3", options="header"]
+|===
+| Designator
+| Qty
+| Value
+| Note
+| Reference Part
+
+| C14, C15
+| 2
+| 10p [link:https://www.vishay.com/docs/45171/kseries.pdf[DS]]
+| <<main-board-note-1,1>>
+| K100J15C0GF5TL2
+
+| C1
+| 1
+| 1n [link:https://www.mouser.co.uk/datasheet/3/72/1/KEM_C1049_GOLDMAX_C0G.pdf[DS]]
+| <<main-board-note-1,1>>
+| C320C102J1G5TA
+
+| C4, C5
+| 2
+| 10n [link:https://www.mouser.co.uk/datasheet/3/508/1/KEM_C1050_GOLDMAX_X7R.pdf[DS]]
+| <<main-board-note-2,2>>
+| C322C103K1R5TA
+
+| C2, C3, C11
+| 3
+| 100n [link:https://www.mouser.co.uk/datasheet/3/508/1/KEM_C1050_GOLDMAX_X7R.pdf[DS]]
+| <<main-board-note-2,2>>
+| C320C104K5R5TA
+
+| C9, C12
+| 2
+| 1u [link:https://www.lcsc.com/datasheet/C1579655.pdf[DS]]
+| <<main-board-note-3,3>>
+| UST1H010MDD
+
+| C10, C13
+| 2
+| 10u [link:https://eu.mouser.com/datasheet/3/72/1/KEM_A4005_ESH.pdf[DS]]
+| <<main-board-note-4,4>>
+| ESH106M050AC3AA
+
+| D1, D2, D3
+| 3
+| ~ [link:https://assets.nexperia.com/documents/data-sheet/1N4148_1N4448.pdf[DS]]
+|
+| 1N4148
+
+| J14, J16
+| 2
+| ~
+|
+| 1x4 socket header
+
+| J18, J20
+| 2
+| ~
+|
+| 1x3 socket header
+
+| J9
+| 1
+| ~ [link:https://cdn.sparkfun.com/assets/2/e/c/e/1/Shrouded-10pin.pdf[DS]]
+| <<main-board-note-5,5>>
+| PRT-08506
+
+| Q1
+| 1
+| MMBFJ201 [link:http://www.onsemi.com/pub/Collateral/MMBFJ202-D.pdf[DS]]
+|
+| MMBFJ201
+
+| R7, R13
+| 2
+| 470 [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC4700F
+
+| R32, R34
+| 2
+| 1k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1001F
+
+| R5
+| 1
+| 1.8k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1801F
+
+| R2
+| 1
+| 5.6k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1801F
+
+| R1
+| 1
+| 24k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1001F
+
+| R8, R21, R29
+| 3
+| 91k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC9102F
+
+| R9, R12, R16, R22, R27, R30, R31
+| 7
+| 100k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1003F
+
+| R25
+| 1
+| 180k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1803F
+
+| R35
+| 1
+| 200k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC2003F
+
+| R15
+| 1
+| 220k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC2203F
+
+| R6, R17, R28
+| 3
+| 240k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC2403F
+
+| R10
+| 1
+| 470k [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| RK73H2ATTD4703F
+
+| R18, R20, R24
+| 3
+| 1M [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1004F
+
+| R4
+| 1
+| 1.5M [link:https://www.koaspeer.com/pdfs/MF-MFS-RK.pdf[DS]]
+|
+| MF1/4DC1504F
+
+| R36
+| 1
+| 10M [link:https://www.mouser.co.uk/datasheet/3/508/1/YAGEO%20HHV_datasheet_2024v3.pdf[DS]]
+|
+| HHV-25FR-52-10M
+
+| RV1, RV2, RV6, RV7
+| 4
+| 10K [link:https://www.bourns.com/docs/Product-Datasheets/3296.pdf[DS]]
+| <<main-board-note-6,6>>
+| 3296W
+
+| U3
+| 1
+| 79L05 [link:http://www.farnell.com/datasheets/1827870.pdf[DS]]
+|
+| L79L05ACZ
+
+| U2
+| 1
+| AS3340 [link:http://www.alfarzpp.lv/eng/sc/AS3340.pdf[DS]]
+|
+| AS3340
+
+| U4
+| 1
+| LP2950 [link:http://www.ti.com/lit/ds/symlink/lp2950.pdf[DS]]
+|
+| LP2950CZ-5.0/LFT1
+
+| U1
+| 1
+| TL074 [link:http://www.ti.com/lit/ds/symlink/tl071.pdf[DS]]
+|
+| Generic PDIP
+
+|===
+
+// Note footnotes
+[[main-board-note-1]]1. C0G/NP0 ceramic, 2.5mm pitch +
+[[main-board-note-2]]2. X7R ceramic, 2.5mm pitch +
+[[main-board-note-3]]3. Electrolytic, min. 25V, *max height 11mm*, diameter 4mm, pitch 1.5mm +
+[[main-board-note-4]]4. Electrolytic, min. 25V, *max height 11mm*, diameter 5mm, pitch 2mm +
+[[main-board-note-5]]5. The keyed shrouded headers reduce the chance of powering in reverse. You could use a 2x5 pin header. +
+[[main-board-note-6]]6. These are top adjusted. You could use the 3296X, which is side adjusted +
+
+== Sourcing Parts
+
+The majority of components can be found on Mouser. Front panel control components can all be sourced from Thonk.
+
+== Next Steps
+
+Once you have all the components, proceed to the xref:build-guide.adoc[Build Guide].
