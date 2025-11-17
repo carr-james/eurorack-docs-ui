@@ -14,6 +14,7 @@ const crypto = require('crypto')
 
 const EXTENSION_NAME = 'collector-cache-extension'
 const DEFAULT_CACHE_DIR = '.cache/antora/collector-cache'
+const posixify = path.sep === '\\' ? (p) => p.replace(/\\/g, '/') : undefined
 
 /**
  * Register the collector cache extension
@@ -117,25 +118,22 @@ module.exports.register = function () {
           const repoName = path.basename(url, '.git')
           const worktreePrefix = `${repoName}@${refname}-`
 
-          // Create worktree directory with timestamp (matching collector extension's naming)
-          const timestamp = Date.now()
-          const worktreeDirName = `${worktreePrefix}${timestamp}`
-          worktree = path.join(collectorCacheDir, worktreeDirName)
-
           // Create the worktree using git clone
           try {
-            logger.debug(`Creating worktree at ${worktree}`)
-
             // Ensure collector cache directory exists
             if (!fs.existsSync(collectorCacheDir)) {
               fs.mkdirSync(collectorCacheDir, { recursive: true })
             }
 
-            // Clone the repository into the worktree
+            // Clone the repository using collector's naming convention
             if (origin.url) {
-              // Remote build: clone from URL
+              // Generate worktree folder name using collector's algorithm
+              const worktreeDirName = generateWorktreeFolderName(origin, true)
+              worktree = path.join(collectorCacheDir, worktreeDirName)
+
+              logger.debug(`Creating worktree at ${worktree}`)
               logger.debug(`Cloning from ${origin.url}`)
-              const ref = `refs/${origin.reftype === 'branch' ? 'head' : origin.reftype}s/${origin.refname}`
+
               await git.clone({
                 fs,
                 http,
@@ -145,6 +143,9 @@ module.exports.register = function () {
                 singleBranch: true,
                 depth: 1
               })
+
+              logger.debug(`Successfully created worktree: ${worktreeDirName}`)
+
             } else if (origin.worktree) {
               // Local build: use existing worktree
               worktree = origin.worktree
@@ -892,4 +893,28 @@ function globToRegex (pattern) {
     .replace(/\?/g, '.')
 
   return new RegExp(`^${regexStr}$`)
+}
+
+/**
+ * Generate worktree folder name (copied from collector extension)
+ * This ensures we create worktrees with the same naming convention the collector uses
+ *
+ * @param {object} origin - Origin object with url, gitdir, refname, worktree properties
+ * @param {boolean} keepWorktrees - Whether to keep worktrees between runs
+ * @returns {string} Worktree folder name
+ */
+function generateWorktreeFolderName ({ url, gitdir, refname, worktree }, keepWorktrees = true) {
+  const refnameQualifier = keepWorktrees ? '@' + refname.replace(/[/]/g, '-') : undefined
+  if (worktree === undefined) {
+    const folderName = path.basename(gitdir, '.git')
+    if (!refnameQualifier) return folderName
+    const lastHyphenIdx = folderName.lastIndexOf('-')
+    return `${folderName.slice(0, lastHyphenIdx)}${refnameQualifier}${folderName.slice(lastHyphenIdx)}`
+  }
+  let normalizedUrl = (url || gitdir).toLowerCase()
+  if (posixify) normalizedUrl = posixify(normalizedUrl)
+  normalizedUrl = normalizedUrl.replace(/(?:[/]?\.git|[/])$/, '')
+  const slug = path.basename(normalizedUrl) + (refnameQualifier || '')
+  const hash = crypto.createHash('sha1').update(normalizedUrl).digest('hex')
+  return `${slug}-${hash}`
 }
