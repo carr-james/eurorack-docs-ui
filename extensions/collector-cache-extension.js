@@ -48,6 +48,19 @@ module.exports.register = function () {
           continue
         }
 
+        // SAFETY: Detect local development to avoid destructive git operations
+        // For local sources, gitdir is worktree/.git (e.g., /work/.git is inside /work)
+        // For remote builds, gitdir and worktree are in separate cache directories
+        logger.debug(`Origin properties: worktree=${origin.worktree}, gitdir=${origin.gitdir}, url=${origin.url}`)
+        const isLocalDevelopment = origin.worktree && origin.gitdir &&
+                                   (origin.gitdir === path.join(origin.worktree, '.git'))
+        logger.debug(`isLocalDevelopment check: ${isLocalDevelopment} (gitdir: ${origin.gitdir}, expected: ${path.join(origin.worktree || '', '.git')})`)
+        if (isLocalDevelopment) {
+          logger.info(`Local development detected for ${componentName} - skipping git operations to protect uncommitted changes`)
+        } else {
+          logger.debug(`Remote build detected for ${componentName} - git operations will run normally`)
+        }
+
         // Determine worktree path
         let worktree = origin.worktree
 
@@ -263,7 +276,8 @@ module.exports.register = function () {
             }
 
             // Update worktree to current commit before checking files (remote builds only)
-            if (origin.gitdir && origin.refname && origin.reftype && origin.url) {
+            // SAFETY: Skip git operations for local development to avoid destroying uncommitted changes
+            if (!isLocalDevelopment && origin.gitdir && origin.refname && origin.reftype && origin.url) {
               try {
                 // Match collector extension's ref construction (line 128)
                 const ref = `refs/${origin.reftype === 'branch' ? 'head' : origin.reftype}s/${origin.refname}`
