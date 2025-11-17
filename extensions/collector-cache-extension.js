@@ -77,58 +77,6 @@ module.exports.register = function () {
           origin.descriptor.ext.collector = []
         }
 
-        // If no worktree, run all collectors and track for caching (first build)
-        if (!worktree) {
-          logger.info(`No worktree found for ${componentName} - will run all collectors`)
-          const entries = Array.isArray(cacheConfig) ? cacheConfig : cacheConfig.entries
-          if (entries && Array.isArray(entries)) {
-            logger.info(`Adding ${entries.length} collector entries for ${componentName}`)
-
-            // Determine cache directory and worktree location
-            const cacheDir = (cacheConfig.cacheDir || DEFAULT_CACHE_DIR)
-            const componentHashDir = path.join(playbook.dir, cacheDir, 'hashes', componentName)
-            const collectorCacheDir = path.join(playbook.dir, playbook.runtime.cacheDir || '.cache/antora', 'collector')
-            const refname = origin.refname || origin.branch || origin.tag || 'HEAD'
-
-            // Extract repository name from URL for worktree prefix
-            const url = origin.url || ''
-            const repoName = path.basename(url, '.git')
-            const worktreePrefix = `${repoName}@${refname}-`
-
-            for (const entry of entries) {
-              const { run, scan } = entry
-
-              // Note: Antora normalizes YAML keys to lowercase, so cacheDir becomes cachedir
-              const cachedir = run?.cachedir || run?.cacheDir
-              if (!run || !run.key || !run.sources || !cachedir) {
-                logger.warn(`Skipping invalid entry (missing run.key, run.sources, or run.cachedir)`)
-                logger.debug(`Entry structure: ${JSON.stringify(entry)}`)
-                continue
-              }
-
-              // Add to collector to run
-              origin.descriptor.ext.collector.push(entry)
-
-              // Track for caching after build
-              cacheEntries.push({
-                componentName,
-                componentHashDir,
-                key: run.key,
-                sources: run.sources,
-                sourceCommands: run.sourcecommands || run.sourceCommands,  // Store for later resolution
-                collectorCacheDir,
-                worktreePrefix,
-                outputDir: cachedir,
-                sourceHashes: null,
-                contentHash: null
-              })
-            }
-          } else {
-            logger.warn(`No entries found in cacheConfig for ${componentName}`)
-          }
-          continue
-        }
-
         // Handle both array and object formats
         const entries = Array.isArray(cacheConfig) ? cacheConfig : cacheConfig.entries
 
@@ -141,9 +89,7 @@ module.exports.register = function () {
         const cacheDir = (cacheConfig.cacheDir || DEFAULT_CACHE_DIR)
         const componentHashDir = path.join(playbook.dir, cacheDir, 'hashes', componentName)
 
-        logger.debug(`Processing ${entries.length} entries for ${componentName}`)
-
-        // Build entries map for dependency resolution
+        // Build entries map for dependency resolution (needed for both paths)
         const entriesMap = new Map()
         for (const entry of entries) {
           const { run } = entry
@@ -156,6 +102,127 @@ module.exports.register = function () {
             })
           }
         }
+
+        // If no worktree, create one with submodules initialized for the collector to use
+        if (!worktree) {
+          logger.info(`No worktree found for ${componentName} - creating worktree with submodules`)
+          logger.info(`Adding ${entries.length} collector entries for ${componentName}`)
+
+          // Determine worktree location that collector will use
+          const collectorCacheDir = path.join(playbook.dir, playbook.runtime.cacheDir || '.cache/antora', 'collector')
+          const refname = origin.refname || origin.branch || origin.tag || 'HEAD'
+
+          // Extract repository name from URL for worktree prefix
+          const url = origin.url || ''
+          const repoName = path.basename(url, '.git')
+          const worktreePrefix = `${repoName}@${refname}-`
+
+          // Create worktree directory with timestamp (matching collector extension's naming)
+          const timestamp = Date.now()
+          const worktreeDirName = `${worktreePrefix}${timestamp}`
+          worktree = path.join(collectorCacheDir, worktreeDirName)
+
+          // Create the worktree using git clone
+          try {
+            logger.debug(`Creating worktree at ${worktree}`)
+
+            // Ensure collector cache directory exists
+            if (!fs.existsSync(collectorCacheDir)) {
+              fs.mkdirSync(collectorCacheDir, { recursive: true })
+            }
+
+            // Clone the repository into the worktree
+            if (origin.url) {
+              // Remote build: clone from URL
+              logger.debug(`Cloning from ${origin.url}`)
+              const ref = `refs/${origin.reftype === 'branch' ? 'head' : origin.reftype}s/${origin.refname}`
+              await git.clone({
+                fs,
+                http,
+                dir: worktree,
+                url: origin.url,
+                ref: origin.refname,
+                singleBranch: true,
+                depth: 1
+              })
+            } else if (origin.worktree) {
+              // Local build: use existing worktree
+              worktree = origin.worktree
+            } else {
+              logger.warn(`No URL or worktree available for ${componentName}`)
+              continue
+            }
+
+            // Initialize submodules (critical for collector commands and hash calculations)
+            logger.debug(`Initializing submodules in ${worktree}`)
+            const { spawn } = require('child_process')
+            await new Promise((resolve, reject) => {
+              const proc = spawn('git', ['submodule', 'update', '--init', '--recursive'], { cwd: worktree })
+              let stderr = ''
+              proc.stderr.on('data', (data) => { stderr += data })
+              proc.on('close', (code) => {
+                if (code === 0) {
+                  logger.debug(`Submodules initialized successfully`)
+                  resolve()
+                } else {
+                  logger.debug(`git submodule exited with code ${code}: ${stderr}`)
+                  resolve() // Don't fail - repo might not have submodules
+                }
+              })
+              proc.on('error', (err) => {
+                logger.debug(`Failed to run git submodule: ${err.message}`)
+                resolve() // Don't fail - git might not be available
+              })
+            })
+
+            logger.info(`✓ Created worktree with submodules at ${worktree}`)
+
+          } catch (err) {
+            logger.error(`Failed to create worktree for ${componentName}: ${err.message}`)
+            logger.debug(`Error stack: ${err.stack}`)
+            continue
+          }
+
+          for (const entry of entries) {
+            const { run, scan } = entry
+
+            // Note: Antora normalizes YAML keys to lowercase, so cacheDir becomes cachedir
+            const cachedir = run?.cachedir || run?.cacheDir
+            if (!run || !run.key || !run.sources || !cachedir) {
+              logger.warn(`Skipping invalid entry (missing run.key, run.sources, or run.cachedir)`)
+              logger.debug(`Entry structure: ${JSON.stringify(entry)}`)
+              continue
+            }
+
+            // Add to collector to run
+            origin.descriptor.ext.collector.push(entry)
+
+            // Resolve dependencies to get combined sources
+            const dependsOn = run.dependson || run.dependsOn || []
+            const depSources = resolveDependencySources(entriesMap, dependsOn, new Set([run.key]), logger, componentName, run.key)
+
+            // Combine entry's own sources with dependency sources
+            const allSources = [...run.sources, ...depSources.sources]
+            const allSourceCommands = [...(run.sourcecommands || run.sourceCommands || []), ...depSources.sourceCommands]
+
+            // Track for caching after build (with resolved sources)
+            cacheEntries.push({
+              componentName,
+              componentHashDir,
+              key: run.key,
+              sources: allSources,  // Store combined sources (incl. dependencies)
+              sourceCommands: allSourceCommands,  // Store combined sourceCommands (incl. dependencies)
+              collectorCacheDir,
+              worktreePrefix,
+              outputDir: cachedir,
+              sourceHashes: null,
+              contentHash: null
+            })
+          }
+          continue
+        }
+
+        logger.debug(`Processing ${entries.length} entries for ${componentName}`)
 
         for (const entry of entries) {
           const { run, scan } = entry
@@ -406,6 +473,7 @@ module.exports.register = function () {
 
         if (!sourceHashes) {
           // Resolve sources (including dynamic sources from sourceCommands)
+          // Note: Submodules are already initialized during contentAggregated
           const resolvedSources = await resolveSources(worktree, entry.sources, entry.sourceCommands, logger, entry.componentName, entry.key)
 
           sourceHashes = computeHashes(worktree, resolvedSources, logger, entry.componentName, entry.key)
