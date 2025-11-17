@@ -68,6 +68,7 @@ module.exports.register = function () {
             if (matchingEntries.length > 0) {
               const worktreeDirName = matchingEntries[matchingEntries.length - 1]
               worktree = path.join(collectorCacheDir, worktreeDirName)
+              origin.worktree = worktree  // Tell collector this worktree exists
               logger.debug(`Found worktree: ${worktree}`)
             }
           }
@@ -177,6 +178,10 @@ module.exports.register = function () {
             })
 
             logger.info(`✓ Created worktree with submodules at ${worktree}`)
+
+            // IMPORTANT: Set origin.worktree so collector knows the worktree exists
+            // This prevents collector from recreating/removing the worktree
+            origin.worktree = worktree
 
           } catch (err) {
             logger.error(`Failed to create worktree for ${componentName}: ${err.message}`)
