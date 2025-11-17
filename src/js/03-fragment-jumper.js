@@ -4,6 +4,7 @@
   var article = document.querySelector('article.doc')
   if (!article) return
   var toolbar = document.querySelector('.toolbar')
+  var main = document.querySelector('main.article')
   var supportsScrollToOptions = 'scrollTo' in document.documentElement
 
   function decodeFragment (hash) {
@@ -17,12 +18,30 @@
   function jumpToAnchor (e) {
     if (e) {
       if (e.altKey || e.ctrlKey) return
-      window.location.hash = '#' + this.id
       e.preventDefault()
     }
+
     var y = computePosition(this, 0) - toolbar.getBoundingClientRect().bottom
     var instant = e === false && supportsScrollToOptions
-    instant ? window.scrollTo({ left: 0, top: y, behavior: 'instant' }) : window.scrollTo(0, y)
+
+    // On desktop, main.article is the scroll container (has overflow-y: auto)
+    // On mobile, window is the scroll container
+    if (main && window.getComputedStyle(main).overflowY === 'auto') {
+      // Desktop: scroll the article container
+      if (instant && 'scrollTo' in main) {
+        main.scrollTo({ left: 0, top: y, behavior: 'instant' })
+      } else {
+        main.scrollTop = y
+      }
+    } else {
+      // Mobile: scroll the window
+      instant ? window.scrollTo({ left: 0, top: y, behavior: 'instant' }) : window.scrollTo(0, y)
+    }
+
+    // Update hash using replaceState to avoid triggering browser scroll
+    if (e && window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', '#' + this.id)
+    }
   }
 
   window.addEventListener('load', function jumpOnLoad (e) {
