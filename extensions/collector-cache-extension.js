@@ -11,6 +11,7 @@
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const { globSync } = require('fast-glob')
 
 const EXTENSION_NAME = 'collector-cache-extension'
 const DEFAULT_CACHE_DIR = '.cache/antora/collector-cache'
@@ -858,62 +859,22 @@ function restoreFilesToWorktree (cacheOutputDir, worktreeOutputDir, patterns, lo
 }
 
 /**
- * Find files matching a glob pattern
+ * Find files matching a glob pattern using fast-glob
  *
  * @param {string} dir - Directory to search
  * @param {string} pattern - Glob pattern (supports ** and *)
  * @returns {string[]} Array of relative paths matching the pattern
  */
 function findFilesMatchingPattern (dir, pattern) {
-  const results = []
-
-  // Convert glob pattern to regex
-  const regex = globToRegex(pattern)
-
-  function search (currentDir, relativePath = '') {
-    if (!fs.existsSync(currentDir)) {
-      return
-    }
-
-    const entries = fs.readdirSync(currentDir, { withFileTypes: true })
-
-    for (const entry of entries) {
-      const entryRelPath = relativePath ? path.join(relativePath, entry.name) : entry.name
-
-      if (entry.isDirectory()) {
-        search(path.join(currentDir, entry.name), entryRelPath)
-      } else if (entry.isFile()) {
-        // Normalize path separators for matching
-        const normalizedPath = entryRelPath.replace(/\\/g, '/')
-        if (regex.test(normalizedPath)) {
-          results.push(entryRelPath)
-        }
-      }
-    }
+  if (!fs.existsSync(dir)) {
+    return []
   }
 
-  search(dir)
-  return results
-}
-
-/**
- * Convert glob pattern to RegExp
- *
- * @param {string} pattern - Glob pattern
- * @returns {RegExp} Regular expression matching the pattern
- */
-function globToRegex (pattern) {
-  // Escape special regex characters except * and ?
-  let regexStr = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\//g, '(__DOUBLESTAR__)')  // ** followed by / becomes optional pattern
-    .replace(/\*\*/g, '__SINGLESTAR__')       // ** without / becomes single star
-    .replace(/\*/g, '[^/]*')
-    .replace(/__DOUBLESTAR__/g, '(.*/)?')     // matches zero or more dirs (with trailing /)
-    .replace(/__SINGLESTAR__/g, '.*')         // fallback for ** without /
-    .replace(/\?/g, '.')
-
-  return new RegExp(`^${regexStr}$`)
+  return globSync(pattern, {
+    cwd: dir,
+    onlyFiles: true,
+    dot: true
+  })
 }
 
 /**
