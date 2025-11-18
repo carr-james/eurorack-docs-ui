@@ -906,9 +906,11 @@ function globToRegex (pattern) {
   // Escape special regex characters except * and ?
   let regexStr = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '__DOUBLESTAR__')
+    .replace(/\*\*\//g, '(__DOUBLESTAR__)')  // ** followed by / becomes optional pattern
+    .replace(/\*\*/g, '__SINGLESTAR__')       // ** without / becomes single star
     .replace(/\*/g, '[^/]*')
-    .replace(/__DOUBLESTAR__/g, '.*')
+    .replace(/__DOUBLESTAR__/g, '(.*/)?')     // matches zero or more dirs (with trailing /)
+    .replace(/__SINGLESTAR__/g, '.*')         // fallback for ** without /
     .replace(/\?/g, '.')
 
   return new RegExp(`^${regexStr}$`)
